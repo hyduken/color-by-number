@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><title>Color by Number browser checks</title>
+  <body>
+    <h1>Browser checks</h1>
+    <pre id="results">Running…</pre>
+    <script type="module">
+      import {
+        loadImage,
+        cropImage,
+        processImage,
+      } from "../src/image/processor.js";
+      import {
+        savePuzzle,
+        listPuzzles,
+        deletePuzzle,
+      } from "../src/storage/database.js";
+      import { createState } from "../src/puzzle/state.js";
+      const results = [];
+      function assert(value, message) {
+        if (!value) throw new Error(message);
+      }
+      async function check(name, fn) {
+        try {
+          await fn();
+          results.push("PASS " + name);
+        } catch (e) {
+          results.push("FAIL " + name + ": " + e.message);
+        }
+        document.querySelector("#results").textContent = results.join("\n");
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = 400;
+      canvas.height = 200;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#ff0000";
+      ctx.fillRect(0, 0, 200, 200);
+      ctx.fillStyle = "#0000ff";
+      ctx.fillRect(200, 0, 200, 200);
+      const settings = { grid: 16, colors: 6, x: 0, y: 50, zoom: 1 };
+      await check(
+        "square crop preserves proportions and horizontal position",
+        () => {
+          const left = cropImage(canvas, settings, 16)
+            .getContext("2d")
+            .getImageData(8, 8, 1, 1).data;
+          const right = cropImage(canvas, { ...settings, x: 100 }, 16)
+            .getContext("2d")
+            .getImageData(8, 8, 1, 1).data;
+          assert(
+            left[0] === 255 &&
+              left[2] === 0 &&
+              right[0] === 0 &&
+              right[2] === 255,
+            "crop position wrong",
+          );
+        },
+      );
+      for (const grid of [16, 24, 32, 48, 64])
+        await check(grid + "px output and palette bounds", () => {
+          const result = processImage(canvas, { ...settings, grid });
+          assert(
+            result.cells.length === grid * grid &&
+              result.width === grid &&
+              result.palette.length <= 6,
+            "dimensions or palette invalid",
+          );
+        });
+      await check("JPEG, PNG and WebP image loading", async () => {
+        for (const type of ["image/jpeg", "image/png", "image/webp"]) {
+          const blob = await new Promise((resolve) =>
+            canvas.toBlob(resolve, type),
+          );
+          const loaded = await loadImage(new File([blob], "picture", { type }));
+          assert(
+            loaded.canvas.width === 400 &&
+              loaded.canvas.height === 200 &&
+              loaded.blob.size > 0,
+            "image not loaded",
+          );
+        }
+      });
+      await check("unsupported, corrupt and oversized files fail", async () => {
+        for (const file of [
+          new File(["bad"], "bad.svg", { type: "image/svg+xml" }),
+          new File(["bad"], "bad.png", { type: "image/png" }),
+          new File([new Uint8Array(26 * 1024 * 1024)], "huge.jpg", {
+            type: "image/jpeg",
+          }),
+        ]) {
+          let rejected = false;
+          try {
+            await loadImage(file);
+          } catch {
+            rejected = true;
+          }
+          assert(rejected, "invalid file accepted");
+        }
+      });
+      await check("large image bounded to 1600 pixels", async () => {
+        const large = document.createElement("canvas");
+        large.width = 3200;
+        large.height = 2400;
+        const blob = await new Promise((resolve) =>
+          large.toBlob(resolve, "image/png"),
+        );
+        const result = await loadImage(
+          new File([blob], "large.png", { type: "image/png" }),
+        );
+        assert(
+          result.canvas.width === 1600 && result.canvas.height === 1200,
+          "large image not bounded",
+        );
+      });
+      await check("transparent image composites to white", async () => {
+        const transparent = document.createElement("canvas");
+        transparent.width = transparent.height = 1;
+        const blob = await new Promise((resolve) =>
+          transparent.toBlob(resolve, "image/png"),
+        );
+        const loaded = await loadImage(
+          new File([blob], "transparent.png", { type: "image/png" }),
+        );
+        const result = processImage(loaded.canvas, settings);
+        assert(
+          result.palette.length === 1 && result.palette[0].color === "#ffffff",
+          "transparency wrong",
+        );
+      });
+      await check(
+        "IndexedDB saves and restores definition, image, settings and progress",
+        async () => {
+          const id = "browser-test-" + crypto.randomUUID();
+          const definition = processImage(canvas, settings);
+          const blob = await new Promise((resolve) =>
+            canvas.toBlob(resolve, "image/png"),
+          );
+          const record = {
+            id,
+            title: "Browser test",
+            definition,
+            settings,
+            preview: blob,
+            progress: definition.cells.map((_, i) => i === 0),
+            updatedAt: Date.now(),
+          };
+          try {
+            await savePuzzle(record);
+            const saved = (await listPuzzles()).find((p) => p.id === id);
+            assert(
+              saved.preview instanceof Blob && saved.preview.size === blob.size,
+              "preview not restored",
+            );
+            assert(
+              JSON.stringify(saved.definition) === JSON.stringify(definition),
+              "definition not restored",
+            );
+            assert(
+              createState(saved.definition, saved.progress).progress[0] ===
+                true && saved.progress[1] === false,
+              "progress not restored",
+            );
+            saved.progress[1] = true;
+            await savePuzzle(saved);
+            assert(
+              (await listPuzzles()).find((p) => p.id === id).progress[1] ===
+                true,
+              "progress update not restored",
+            );
+          } finally {
+            await deletePuzzle(id);
+          }
+        },
+      );
+      await check(
+        "JPEG orientation is normalised before processing",
+        async () => {
+          const blob = await (
+            await fetch("/tests/fixtures/oriented.jpg")
+          ).blob();
+          const loaded = await loadImage(
+            new File([blob], "oriented.jpg", { type: "image/jpeg" }),
+          );
+          assert(
+            loaded.canvas.width === 40 && loaded.canvas.height === 80,
+            "orientation dimensions wrong",
+          );
+          const context = loaded.canvas.getContext("2d");
+          assert(
+            context.getImageData(20, 10, 1, 1).data[0] > 240 &&
+              context.getImageData(20, 70, 1, 1).data[2] > 240,
+            "orientation colours wrong",
+          );
+        },
+      );
+      document.title = results.some((r) => r.startsWith("FAIL"))
+        ? "FAIL browser checks"
+        : "PASS browser checks";
+      document.querySelector("#results").textContent +=
+        "\n\n" +
+        results.filter((r) => r.startsWith("PASS")).length +
+        "/" +
+        results.length +
+        " checks passed";
+    </script>
+  </body>
+</html>

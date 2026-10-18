@@ -1,0 +1,11 @@
+# Verification — 18 October 2026
+
+- Node unit checks: dimensions, palette bounds, valid cell references, transparent, tiny, large and single-colour input, deterministic quantisation without input mutation, invalid inputs, matching-only paint, stroke undo/redo, new-stroke redo invalidation, completion, progress serialisation, undoable reset, coordinate boundaries, partial transparency, drag interpolation and height-aware canvas fitting and extra-finger gesture protection.
+- Browser self-checks (`/tests/browser.html`): crop position and aspect ratio; all five grid sizes; JPEG/PNG/WebP decode and JPEG EXIF orientation; unsupported, malformed and oversized files; 3200×2400 input reduction to 1600×1200; transparency; IndexedDB creation, update and restoration of definition, settings, source Blob and progress.
+- Interactive browser checks: 404×827 phone layout without horizontal overflow; 1280×720 desktop layout; actual file-picker upload; clipboard image paste; generated preview; presets; drag colouring; undo and redo; keyboard painting; zoom; pointer pan; progress restoration after reload; 256-cell completion and celebration.
+- Conversion samples: built-in limited-palette pixel-art cat, generated landscape JPEG, transparent 1×1 PNG, scikit-image's Chelsea cat and NASA astronaut portrait (downloaded temporarily for QA, not shipped). Medium retains recognisable subjects; Hard improves facial and background detail. Fur, textures and busy backgrounds retain scattered cells. Cropping the subject and lowering grid size are the current simplification controls. No unproven noise-removal algorithm was added.
+- Production build: static assets only; image-q is bundled locally. No external resources are required by application code.
+
+Still needs physical iPad/Android testing, actual two-finger pinch validation, broader Safari/Firefox coverage, OS file-drag checks, and forced quota/private-mode failure checks. This session used the available in-app browser; viewport emulation does not prove physical touchscreen behaviour. Browser storage can be cleared or evicted by the device.
+
+Final read-only review identified and resolved two edge cases: save-status callbacks now ignore superseded snapshots; an extra finger during a pinch cannot start a painting stroke. The latter has a regression test using the real interaction handlers.
