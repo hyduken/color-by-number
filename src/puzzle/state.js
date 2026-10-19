@@ -5,7 +5,7 @@ export function createState(definition, progress) {
     !definition.cells.length ||
     !definition.cells.every((id) => definition.palette.some((p) => p.id === id))
   )
-    throw new Error("This puzzle could not be opened.");
+    throw new Error("This picture could not be opened.");
   return {
     definition,
     progress:
@@ -29,6 +29,22 @@ export function paint(state, index, color) {
   state.progress[index] = true;
   state.stroke.push(index);
   return true;
+}
+export function paintBrush(state, index, color, radius) {
+  const { width, height } = state.definition;
+  if (!Number.isInteger(index) || index < 0 || index >= state.progress.length ||
+      !Number.isInteger(radius) || radius < 0) return [];
+  const centreX = index % width;
+  const centreY = Math.floor(index / width);
+  const changed = [];
+  for (let y = Math.max(0, centreY - radius); y <= Math.min(height - 1, centreY + radius); y++) {
+    for (let x = Math.max(0, centreX - radius); x <= Math.min(width - 1, centreX + radius); x++) {
+      if ((x - centreX) ** 2 + (y - centreY) ** 2 > radius ** 2) continue;
+      const cell = y * width + x;
+      if (paint(state, cell, color)) changed.push(cell);
+    }
+  }
+  return changed;
 }
 export function endStroke(state) {
   if (!state.stroke.length) return;
@@ -78,4 +94,8 @@ export function summary(state) {
     complete: filled === state.progress.length,
     remaining,
   };
+}
+
+export function findHint(state, color) {
+  return state.definition.cells.findIndex((id, index) => id === color && !state.progress[index]);
 }

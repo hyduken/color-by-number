@@ -12,7 +12,7 @@ export function quantize({ width, height, data }, colors) {
     colors < 1 ||
     colors > 32
   ) {
-    throw new Error("Invalid image dimensions or palette size.");
+    throw new Error("We could not make this picture. Try another one.");
   }
   const opaque = new Uint8Array(data.length);
   for (let i = 0; i < data.length; i += 4) {

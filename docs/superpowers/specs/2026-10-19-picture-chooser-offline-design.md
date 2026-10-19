@@ -15,6 +15,13 @@ Children can start a new puzzle without supplying a photo, and use the app witho
 - Keep hash navigation. Distinguish the chooser and crop step so Back and Forward move through them. Retain the selected photo and settings in memory during the session. A refreshed crop route without a source falls back to the chooser with an explanation.
 - Selecting a replacement image resets crop settings and invalidates the generated puzzle. Merely opening the chooser must not erase saved puzzles or progress.
 
+## Saved picture collection
+
+- `#/library` is a dedicated All pictures page containing every saved puzzle, including works in progress and completed pictures, ordered most recently updated first.
+- The homepage displays the seven most recently updated saved puzzles and a link to the complete collection.
+- My puzzles and All pictures links go to the collection. Selecting a saved picture opens its existing `#/puzzle/<id>` route.
+- The homepage starter card says “Pick a little adventure” and “Explore our starter pictures →”, and opens the chooser.
+
 ## Camera and device pictures
 
 - Reuse the existing file decoding, validation, orientation handling and browser-local processing for device files and camera results.

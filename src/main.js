@@ -1,13 +1,19 @@
 import "./styles/main.css";
+import confetti from "canvas-confetti";
+import { icon } from "./ui/icons.js";
+import { HintMarker } from "./renderer/hint.js";
+import { starterPictures, loadStarter } from "./image/starters.js";
+import { recentPuzzles } from "./puzzle/library.js";
+import { initOffline } from "./offline/register.js";
 import {
   loadImage,
   cropImage,
   processImage,
-  demoImage,
 } from "./image/processor.js";
 import {
   createState,
-  paint,
+  paintBrush,
+  findHint,
   endStroke,
   undo,
   redo,
@@ -39,6 +45,10 @@ let noticeTimer;
 const memoryRecords = new Map();
 let saveQueue = Promise.resolve();
 let routeRevision = 0;
+let brushRadius = 3;
+let offlineStatus = import.meta.env.PROD ? "Saving the app for offline use…" : "Offline caching is enabled in the production build.";
+const offlineLabel = () => `<p class="offline-status" role="status" data-offline-status>${offlineStatus}</p>`;
+const footer = () => `<footer>Color a picture, one square at a time.<span class="footer-links"><a href="#/parents">For parents</a><a href="https://hyduken.com/">made by hyduken</a></span></footer>`;
 
 function navigate(hash) {
   if (location.hash === hash) renderRoute();
@@ -51,7 +61,19 @@ async function renderRoute() {
   if (current) persist(current.record, current.state.progress);
   current = null;
   const hash = location.hash;
-  if (hash === "#/create" && source) {
+  if (hash === "#/parents") {
+    showParents();
+    return;
+  }
+  if (hash === "#/create") {
+    showChooser();
+    return;
+  }
+  if (hash === "#/library") {
+    showLibrary(revision);
+    return;
+  }
+  if (hash === "#/crop" && source) {
     showCreate();
     return;
   }
@@ -60,12 +82,12 @@ async function renderRoute() {
     const id = puzzleRoute[1];
     let record = memoryRecords.get(id);
     if (!record) {
-      mount('<p class="muted">Opening your puzzle…</p>');
+      mount('<p class="muted">Opening your picture…</p>');
       try {
         record = (await listPuzzles()).find((p) => p.id === id);
       } catch {
         if (revision !== routeRevision) return;
-        notice("Saved puzzles are unavailable in this browser.");
+        notice("Saved pictures are unavailable in this browser.");
       }
     }
     if (revision !== routeRevision) return;
@@ -74,13 +96,17 @@ async function renderRoute() {
       showPlay(record);
       return;
     }
-    notice("This puzzle is not saved on this device.");
+    notice("This picture is not saved on this device.");
   }
-  if (hash === "#/create" && !source)
-    notice("Choose your picture again to start a new puzzle.");
+  if (hash === "#/crop" && !source) {
+    notice("Choose your picture again to start coloring.");
+    history.replaceState(null, "", "#/create");
+    showChooser();
+    return;
+  }
   if (!["#/", "#/library"].includes(hash))
     history.replaceState(null, "", "#/");
-  showHome(location.hash === "#/library", revision);
+  showHome(revision);
 }
 
 function notice(message, persistent = false) {
@@ -121,22 +147,13 @@ function persist(record, progress) {
   record.updatedAt = Date.now();
   const snapshot = structuredClone(record);
   memoryRecords.set(record.id, snapshot);
-  const label = $("#save-status");
-  if (label) label.textContent = "Saving…";
   saveQueue = saveQueue
     .catch(() => {})
     .then(() => savePuzzle(snapshot))
-    .then(() => {
-      if (memoryRecords.get(record.id) !== snapshot) return;
-      if (current?.record.id === record.id && $("#save-status"))
-        $("#save-status").textContent = "Saved on this device";
-    })
     .catch(() => {
       if (memoryRecords.get(record.id) !== snapshot) return;
-      if ($("#save-status"))
-        $("#save-status").textContent = "Not saved — keep this tab open";
       notice(
-        "Your browser could not save. Keep this tab open to keep coloring, and check device storage or private browsing settings.",
+        "Your picture could not be saved. Keep this page open so you don’t lose your coloring. Ask a grown-up to check the browser’s storage settings.",
         true,
       );
     });
@@ -150,17 +167,18 @@ async function pick(file) {
     source = loaded;
     settings = { grid: 16, colors: 6, x: 50, y: 50, zoom: 1 };
     draft = null;
-    navigate("#/create");
+    navigate("#/crop");
   } catch (error) {
     notice(error.message);
   } finally {
     busy = false;
   }
 }
-function inputFile() {
+function inputFile(camera = false) {
   const input = document.createElement("input");
   input.type = "file";
-  input.accept = "image/jpeg,image/png,image/webp";
+  input.accept = camera ? "image/*" : "image/jpeg,image/png,image/webp";
+  if (camera) input.setAttribute("capture", "environment");
   input.addEventListener("change", () => pick(input.files[0]));
   input.click();
 }
@@ -172,21 +190,38 @@ function renderMini(canvas, definition, progress) {
   );
   renderer.resize(240);
 }
-async function showHome(focusLibrary = false, revision = routeRevision) {
+function showParents() {
+  mount(`<section class="parents-page">
+    <div class="parents-heading"><h1>For parents</h1><p>How this app keeps your pictures private.</p></div>
+    <section><h2>Your pictures stay on your device</h2><p>Photos are processed right in your browser to make a color-by-number picture. They aren’t uploaded to a server, and your puzzle and coloring progress are saved in this browser on this device.</p></section>
+    <section><h2>No accounts, ads or trackers</h2><p>There’s no sign-up and no profile to create. The app has no ads or tracking tools.</p></section>
+    <section><h2>Use the app offline</h2><p>On your first visit, wait for “Ready offline”. The app and all starter pictures will then be saved for use without an internet connection. Pictures already on your device can be used offline too. Your browser may clear this saved copy if storage is low.</p></section>
+    <p class="parents-note">If you clear this browser’s stored site data, saved pictures and progress may be removed.</p>
+    <footer>Color a picture, one square at a time.<a href="https://hyduken.com/">made by hyduken</a></footer>
+  </section>`);
+}
+async function showHome(revision = routeRevision) {
   mount(`<section class="home-hero">
-    <div class="hero-copy"><h1>A little color.<br>A lot of <em>you.</em><span class="spark" aria-hidden="true">✳</span></h1>
-    <p>Turn a favourite picture into a color-by-number adventure. One little square at a time.</p>
-    <div class="upload-zone" id="drop-zone"><button class="button primary upload-button" id="upload"><span aria-hidden="true">＋</span> Choose a picture</button><span>or drop it here · JPG, PNG, WebP</span></div>
-    <p class="local-note"><span aria-hidden="true">⌂</span> Your pictures stay right here, on your device.</p></div>
-    <div class="hero-art"><div class="art-tape" aria-hidden="true"></div><div class="art-paper"><canvas id="hero-canvas" aria-label="A pixel-art cat, partly colored by number"></canvas><div class="art-caption"><span>Small squares, happy places.</span><span aria-hidden="true">☀</span></div></div><div class="floating-swatch swatch-yellow" aria-hidden="true">1</div><div class="floating-swatch swatch-green" aria-hidden="true">3</div></div>
+    <div class="hero-copy"><h1>Choose a picture.<br>Let’s <em>color!</em><span class="spark" aria-hidden="true">✳</span></h1>
+    <p>Choose a picture, then match the colors to the numbers.</p>
+    <div class="upload-zone" id="drop-zone"><button class="button primary upload-button" id="upload">${icon("Plus")} Choose a picture</button><span>or drop it here · JPG, PNG, WebP</span></div>
+    <p class="local-note">${icon("House")} Your pictures stay right here, on your device.</p><a class="parents-link" href="#/parents">For parents ${icon("ArrowRight")}</a>${offlineLabel()}</div>
+    <div class="hero-art"><div class="art-tape" aria-hidden="true"></div><div class="art-paper"><canvas id="hero-canvas" aria-label="A woodland fox, partly colored by number"></canvas><div class="art-caption"><span>Match the colors to the numbers.</span><span aria-hidden="true">☀</span></div></div><div class="floating-swatch swatch-yellow" aria-hidden="true">1</div><div class="floating-swatch swatch-green" aria-hidden="true">3</div></div>
     </section>
-    <section class="library" id="library"><div class="section-heading"><h2>Your little masterpieces</h2><span id="library-count"></span></div><div id="saved-puzzles" class="saved-grid"><p class="muted">Opening your puzzle box…</p></div></section>
-    <footer>Made for curious minds & colorful afternoons.<a href="https://hyduken.com/">made by hyduken</a></footer>`);
-  $("#upload").onclick = inputFile;
-  const demo = demoImage();
+    <section class="library" id="library"><div class="section-heading"><h2>Your recent pictures</h2><a class="parents-link" href="#/library">See all pictures ${icon("ArrowRight")}</a></div><div id="saved-puzzles" class="saved-grid"><p class="muted">Loading your pictures…</p></div></section>
+    ${footer()}`);
+  $("#upload").onclick = () => navigate("#/create");
+  renderSavedPictures(7, revision);
+  let demo;
+  try {
+    demo = (await loadStarter("fox")).canvas;
+  } catch {
+    return;
+  }
+  if (revision !== routeRevision || !$("#hero-canvas")) return;
   const definition = processImage(demo, {
-    grid: 16,
-    colors: 6,
+    grid: 32,
+    colors: 12,
     x: 50,
     y: 50,
     zoom: 1,
@@ -195,10 +230,12 @@ async function showHome(focusLibrary = false, revision = routeRevision) {
     $("#hero-canvas"),
     definition,
     definition.cells.map(
-      (_, i) => i % 16 < 7 || (Math.floor(i / 16) > 10 && i % 16 < 11),
+      (_, i) => i % 32 < 14 || (Math.floor(i / 32) > 20 && i % 32 < 22),
     ),
   );
   renderer.resize(400);
+}
+async function renderSavedPictures(limit = Infinity, revision = routeRevision) {
   try {
     const saved = await listPuzzles();
     saved.forEach((record) => {
@@ -210,28 +247,15 @@ async function showHome(focusLibrary = false, revision = routeRevision) {
     });
   } catch {
     notice(
-      "Saved puzzles are unavailable in this browser. You can still make and color a picture.",
+      "Saved pictures are unavailable in this browser. You can still make and color a picture.",
     );
   }
   if (revision !== routeRevision || !$("#saved-puzzles")) return;
-  const records = [...memoryRecords.values()].sort(
-    (a, b) => b.updatedAt - a.updatedAt,
-  );
-  $("#library-count").textContent = records.length
-    ? `${records.length} ${records.length === 1 ? "picture" : "pictures"}`
-    : "";
-  $("#saved-puzzles").innerHTML =
-    `<button id="try-demo" class="demo-card"><span class="demo-flower" aria-hidden="true">✿</span><strong>Just want to try?</strong><span>color our sunny little cat <span aria-hidden="true">→</span></span></button>`;
-  $("#try-demo").onclick = async () => {
-    const canvas = demoImage();
-    const blob = await new Promise((resolve) =>
-      canvas.toBlob(resolve, "image/png"),
-    );
-    source = { canvas, blob, title: "Sunny little cat" };
-    draft = null;
-    settings = { grid: 16, colors: 6, x: 50, y: 50, zoom: 1 };
-    navigate("#/create");
-  };
+  const records = recentPuzzles(memoryRecords.values(), limit);
+  if ($("#library-count")) $("#library-count").textContent = `${memoryRecords.size} ${memoryRecords.size === 1 ? "picture" : "pictures"}`;
+  $("#saved-puzzles").innerHTML = limit === 7
+    ? `<a class="demo-card" href="#/create"><span class="demo-flower" aria-hidden="true">✿</span><strong>Choose a picture</strong><span>See our starter pictures ${icon("ArrowRight")}</span></a>`
+    : records.length ? "" : '<p class="muted">No pictures saved yet. Choose a picture to start coloring.</p>';
   records.forEach((record) => {
     const filled = record.progress.filter(Boolean).length;
     const percent = Math.floor((filled / record.definition.cells.length) * 100);
@@ -257,19 +281,49 @@ async function showHome(focusLibrary = false, revision = routeRevision) {
         await saveQueue;
         await deletePuzzle(record.id);
         memoryRecords.delete(record.id);
-        navigate("#/library");
+        navigate(location.hash);
       } catch {
         notice("Could not delete this picture. Please try again.");
       }
     };
   });
-  if (focusLibrary) $("#library").scrollIntoView({ behavior: "instant" });
+
+}
+function showLibrary(revision) {
+  mount(`<section class="create-screen collection-screen"><div class="collection-heading"><div><h1>All pictures</h1><p>Keep coloring a picture or see the ones you’ve finished.</p></div><a class="button primary" href="#/create">Choose a picture ${icon("ArrowRight")}</a></div>${offlineLabel()}<div class="section-heading"><h2>Your pictures</h2><span id="library-count"></span></div><div id="saved-puzzles" class="saved-grid"><p class="muted">Loading your pictures…</p></div></section>${footer()}`);
+  renderSavedPictures(Infinity, revision);
+}
+function showChooser() {
+  mount(`<section class="create-screen chooser-screen"><a class="back-button" href="#/library">${icon("ArrowLeft")} All pictures</a><div class="create-heading"><h1>Choose a picture.</h1><p>Choose a starter picture, use your own picture, or take a photo.</p></div><div class="picture-sources"><button class="button secondary" id="choose-file">${icon("ImagePlus")} Choose from your device</button><button class="button secondary" id="take-photo">${icon("Camera")} Take a photo</button></div><p class="muted source-note">Your device may offer a photo picker instead of a camera. Your pictures stay on this device.</p>${offlineLabel()}<div class="section-heading"><h2>Our starter pictures</h2><span>Choose one to color</span></div><div class="starter-grid">${starterPictures.map((picture) => `<button class="starter-card" data-starter="${picture.id}"><img src="${picture.url}" alt="${picture.title}" width="640" height="640"><strong>${picture.title}</strong><span>Use this picture ${icon("ArrowRight")}</span></button>`).join("")}</div></section>${footer()}`);
+  $("#choose-file").onclick = () => inputFile();
+  $("#take-photo").onclick = () => inputFile(true);
+  app.querySelectorAll("[data-starter]").forEach((button) => {
+    button.onclick = async () => {
+      if (busy) return;
+      const revision = routeRevision;
+      busy = true;
+      button.disabled = true;
+      try {
+        const loaded = await loadStarter(button.dataset.starter);
+        if (revision !== routeRevision) return;
+        source = loaded;
+        settings = { grid: 16, colors: 6, x: 50, y: 50, zoom: 1 };
+        draft = null;
+        navigate("#/crop");
+      } catch (error) {
+        if (revision === routeRevision) notice(error.message);
+      } finally {
+        busy = false;
+        button.disabled = false;
+      }
+    };
+  });
 }
 function showCreate() {
-  mount(`<section class="create-screen"><a class="back-button" id="back" href="#/">← All pictures</a><div class="create-heading"><h1>Make it your own.</h1><p>A little crop. A few colors. A new adventure.</p></div>
-    <div class="create-layout"><section class="picture-panel"><div class="panel-heading"><h2>Your picture</h2><button class="button subtle" id="change-image">Change</button></div><div class="crop-frame"><canvas id="crop-preview" aria-label="Square crop preview"></canvas></div><div class="crop-controls"><label>Move across<input id="crop-x" type="range" min="0" max="100" value="${settings.x}"></label><label>Move up / down<input id="crop-y" type="range" min="0" max="100" value="${settings.y}"></label><label>Crop zoom<input id="crop-zoom" type="range" min="1" max="3" step="0.1" value="${settings.zoom}"></label></div></section>
-    <section class="settings-panel"><h2>Pick your adventure</h2><div class="presets" role="group" aria-label="Difficulty"><button class="preset active" data-grid="16" data-colors="6"><span aria-hidden="true">✿</span>Easy<small>Little steps</small></button><button class="preset" data-grid="32" data-colors="8"><span aria-hidden="true">✳</span>Medium<small>A little more</small></button><button class="preset" data-grid="64" data-colors="16"><span aria-hidden="true">✷</span>Hard<small>Big adventure</small></button><button class="preset" data-grid="128" data-colors="32"><span aria-hidden="true">✹</span>Full Colour Chaos<small>All in!</small></button></div><div class="select-row"><label>Squares<select id="grid-size">${[16, 24, 32, 48, 64, 128].map((n) => `<option value="${n}" ${settings.grid === n ? "selected" : ""}>${n} × ${n}</option>`).join("")}</select></label><label>colors<select id="palette-size">${[6, 8, 12, 16, 24, 32].map((n) => `<option value="${n}" ${settings.colors === n ? "selected" : ""}>${n} colors</option>`).join("")}</select></label></div><label class="title-label">Picture name<input id="picture-title" maxlength="60" value="${escape(source.title)}"></label><button class="button secondary" id="generate">Make my puzzle <span aria-hidden="true">↗</span></button><div class="generated-preview" id="generated-preview"><div class="preview-placeholder"><span aria-hidden="true">▦</span>Your puzzle will appear here</div></div><div class="preview-meta" id="preview-meta"></div><button class="button primary" id="start" disabled>Let’s color <span aria-hidden="true">→</span></button></section></div></section>`);
-  $("#change-image").onclick = inputFile;
+  mount(`<section class="create-screen"><a class="back-button" id="back" href="#/library">${icon("ArrowLeft")} All pictures</a><div class="create-heading"><h1>Get your picture ready.</h1><p>Move and zoom your picture, then choose how hard to make it.</p></div>
+    <div class="create-layout"><section class="picture-panel"><div class="panel-heading"><h2>Your picture</h2><button class="button subtle" id="change-image">Change</button></div><div class="crop-frame"><canvas id="crop-preview" tabindex="0" aria-label="Your picture. Drag to move it, or use the arrow keys."></canvas></div><p class="crop-help">Drag to move your picture · or use arrow keys</p><div class="crop-controls"><label>Picture zoom<input id="crop-zoom" type="range" min="1" max="3" step="0.1" value="${settings.zoom}"></label></div></section>
+    <section class="settings-panel"><h2>Easy or hard?</h2><div class="presets" role="group" aria-label="Difficulty"><button class="preset active" data-grid="16" data-colors="6"><span aria-hidden="true">✿</span>Easy<small>16 × 16 squares</small></button><button class="preset" data-grid="32" data-colors="8"><span aria-hidden="true">✳</span>Medium<small>32 × 32 squares</small></button><button class="preset" data-grid="64" data-colors="16"><span aria-hidden="true">✷</span>Hard<small>64 × 64 squares</small></button><button class="preset" data-grid="128" data-colors="32"><span aria-hidden="true">✹</span>Extra hard<small>128 × 128 squares</small></button></div><div class="select-row"><label>Picture size<select id="grid-size">${[16, 24, 32, 48, 64, 128].map((n) => `<option value="${n}" ${settings.grid === n ? "selected" : ""}>${n} × ${n}</option>`).join("")}</select></label><label>Number of colors<select id="palette-size">${[6, 8, 12, 16, 24, 32].map((n) => `<option value="${n}" ${settings.colors === n ? "selected" : ""}>${n} colors</option>`).join("")}</select></label></div><label class="title-label">Picture name<input id="picture-title" maxlength="60" value="${escape(source.title)}"></label><div class="generated-preview" id="generated-preview"><div class="preview-placeholder"><span aria-hidden="true">▦</span>Your picture will appear here</div></div><div class="preview-meta" id="preview-meta" role="status" aria-live="polite"></div><button class="button primary" id="start" disabled>Let’s color ${icon("ArrowRight")}</button></section></div></section>`);
+  $("#change-image").onclick = () => navigate("#/create");
   $("#picture-title").oninput = (event) => {
     source.title = event.target.value;
   };
@@ -279,23 +333,82 @@ function showCreate() {
     canvas.width = canvas.height = 480;
     canvas.getContext("2d").drawImage(crop, 0, 0);
   };
-  const invalidate = () => {
+  const startButton = $("#start");
+  const previewPanel = $("#generated-preview");
+  const previewMeta = $("#preview-meta");
+  let previewTimer;
+  const updatePreview = () => {
+    clearTimeout(previewTimer);
     draft = null;
-    $("#start").disabled = true;
-    $("#preview-meta").textContent =
-      "Settings changed — make your puzzle again.";
+    startButton.disabled = true;
+    previewPanel.setAttribute("aria-busy", "true");
+    previewMeta.textContent = "Updating your picture…";
+    previewTimer = setTimeout(() => {
+      if (!previewPanel.isConnected) return;
+      try {
+        const nextDraft = processImage(source.canvas, settings);
+        previewPanel.innerHTML =
+          '<canvas id="puzzle-preview" aria-label="Your picture with numbered squares"></canvas>';
+        renderMini($("#puzzle-preview"), nextDraft);
+        draft = nextDraft;
+        previewMeta.textContent =
+          `${draft.width} × ${draft.height} squares · ${draft.palette.length} ${draft.palette.length === 1 ? "color" : "colors"}`;
+        startButton.disabled = false;
+      } catch (error) {
+        previewMeta.textContent = "Could not update this picture. Try another setting or picture.";
+        notice(error.message);
+      } finally {
+        previewPanel.setAttribute("aria-busy", "false");
+      }
+    }, 180);
   };
-  for (const [id, key] of [
-    ["crop-x", "x"],
-    ["crop-y", "y"],
-    ["crop-zoom", "zoom"],
-  ]) {
-    $(`#${id}`).oninput = (event) => {
-      settings[key] = +event.target.value;
-      drawCrop();
-      invalidate();
+  dispose = () => clearTimeout(previewTimer);
+  const setPosition = (x, y) => {
+    const nextX = Math.max(0, Math.min(100, x));
+    const nextY = Math.max(0, Math.min(100, y));
+    if (nextX === settings.x && nextY === settings.y) return;
+    settings.x = nextX;
+    settings.y = nextY;
+    drawCrop();
+    updatePreview();
+  };
+  const cropPreview = $("#crop-preview");
+  let dragStart;
+  cropPreview.onpointerdown = (event) => {
+    event.preventDefault();
+    cropPreview.setPointerCapture(event.pointerId);
+    dragStart = {
+      x: event.clientX,
+      y: event.clientY,
+      positionX: settings.x,
+      positionY: settings.y,
+      bounds: cropPreview.getBoundingClientRect(),
     };
-  }
+  };
+  cropPreview.onpointermove = (event) => {
+    if (!dragStart || !cropPreview.hasPointerCapture(event.pointerId)) return;
+    setPosition(
+      dragStart.positionX -
+        ((event.clientX - dragStart.x) / dragStart.bounds.width) * 100,
+      dragStart.positionY -
+        ((event.clientY - dragStart.y) / dragStart.bounds.height) * 100,
+    );
+  };
+  cropPreview.onpointerup = cropPreview.onpointercancel = () => {
+    dragStart = null;
+  };
+  cropPreview.onkeydown = (event) => {
+    const moves = { ArrowLeft: [-2, 0], ArrowRight: [2, 0], ArrowUp: [0, -2], ArrowDown: [0, 2] };
+    const move = moves[event.key];
+    if (!move) return;
+    event.preventDefault();
+    setPosition(settings.x + move[0], settings.y + move[1]);
+  };
+  $("#crop-zoom").oninput = (event) => {
+    settings.zoom = +event.target.value;
+    drawCrop();
+    updatePreview();
+  };
   const updatePresets = () =>
     app.querySelectorAll(".preset").forEach((button) => {
       const active =
@@ -311,41 +424,18 @@ function showCreate() {
       $("#grid-size").value = settings.grid;
       $("#palette-size").value = settings.colors;
       updatePresets();
-      invalidate();
+      updatePreview();
     };
   });
   $("#grid-size").onchange = (event) => {
     settings.grid = +event.target.value;
     updatePresets();
-    invalidate();
+    updatePreview();
   };
   $("#palette-size").onchange = (event) => {
     settings.colors = +event.target.value;
     updatePresets();
-    invalidate();
-  };
-  $("#generate").onclick = async () => {
-    const button = $("#generate");
-    button.disabled = true;
-    button.textContent = "Making little squares…";
-    await new Promise((resolve) =>
-      requestAnimationFrame(() => requestAnimationFrame(resolve)),
-    );
-    if (!button.isConnected) return;
-    try {
-      draft = processImage(source.canvas, settings);
-      $("#generated-preview").innerHTML =
-        '<canvas id="puzzle-preview" aria-label="Generated pixel-art puzzle preview"></canvas>';
-      renderMini($("#puzzle-preview"), draft);
-      $("#preview-meta").textContent =
-        `${draft.width} × ${draft.height} squares · ${draft.palette.length} ${draft.palette.length === 1 ? "color" : "colors"}`;
-      $("#start").disabled = false;
-    } catch (error) {
-      notice(error.message);
-    } finally {
-      button.disabled = false;
-      button.innerHTML = 'Make my puzzle <span aria-hidden="true">↗</span>';
-    }
+    updatePreview();
   };
   $("#start").onclick = () => {
     if (!draft) return;
@@ -364,7 +454,7 @@ function showCreate() {
   };
   drawCrop();
   updatePresets();
-  $("#generate").click();
+  updatePreview();
 }
 function showPlay(record) {
   let state;
@@ -385,14 +475,15 @@ function showPlay(record) {
     hintTimer,
     wrongTimer,
     resizeFrame;
-  mount(`<section class="play-screen"><div class="play-heading"><a class="back-button" id="back" href="#/library">← My puzzles</a><div class="play-title"><h1>${escape(record.title)}</h1><span id="progress-text"></span></div><span id="save-status">Saved on this device</span></div><progress id="progress" max="100" value="0" aria-label="Puzzle completion"></progress>
-    <div class="workspace"><div class="canvas-area"><div class="canvas-toolbar"><div class="tool-group"><button class="tool" id="undo" aria-label="Undo stroke" title="Undo (Ctrl/⌘ Z)">↶</button><button class="tool" id="redo" aria-label="Redo stroke" title="Redo (Ctrl/⌘ Shift Z)">↷</button></div><div class="tool-group"><button class="tool" id="pan" aria-label="Move picture" aria-pressed="false" title="Move picture">✥</button><button class="tool" id="zoom-out" aria-label="Zoom out">−</button><button class="zoom-value" id="fit" title="Fit picture">100%</button><button class="tool" id="zoom-in" aria-label="Zoom in">＋</button></div><button class="button subtle" id="hint">Peek <span aria-hidden="true">◉</span></button></div>
-    <div class="viewport" id="viewport"><canvas id="puzzle-canvas" tabindex="0" role="application" aria-label="coloring grid. Use arrow keys to move and Space to color. Choose a numbered color first." aria-describedby="canvas-help"></canvas></div><p class="canvas-help" id="canvas-help">Pick a color, then tap or drag over its number.<span>Pinch to zoom · ✥ to move</span></p></div>
-    <aside class="palette-panel"><div class="palette-heading"><h2>Your colors</h2><span id="colors-done"></span></div><div class="palette" id="palette" role="group" aria-label="Numbered colors"></div><div class="selected-info" id="selected-info"></div><div class="completion" id="completion" hidden><span class="complete-flower" aria-hidden="true">✿</span><h2>You made this!</h2><p>Every little square, all you.</p><button class="button primary" id="new-picture">Another adventure →</button></div><div class="palette-bottom"><button class="button subtle" id="reset">Start again ↶</button><span>${record.definition.width} × ${record.definition.height} little squares</span></div></aside></div></section>`);
+  mount(`<section class="play-screen"><div class="play-heading"><a class="back-button" id="back" href="#/library">${icon("ArrowLeft")} My pictures</a><div class="play-title"><h1>${escape(record.title)}</h1><span id="progress-text"></span></div></div><progress id="progress" max="100" value="0" aria-label="Puzzle completion"></progress>
+    <div class="workspace"><div class="canvas-area"><div class="canvas-toolbar"><div class="tool-group mode-tools"><button class="tool" id="undo" aria-label="Undo coloring" title="Undo (Ctrl/⌘ Z)">${icon("Undo2")}</button><button class="tool" id="redo" aria-label="Redo coloring" title="Redo (Ctrl/⌘ Shift Z)">${icon("Redo2")}</button><button class="tool" id="paint-mode" aria-label="Paint with brush" aria-pressed="true" title="Paint">${icon("Paintbrush")}</button><button class="tool" id="pan" aria-label="Move picture" aria-pressed="false" title="Move picture">${icon("Hand")}</button></div><div class="tool-group zoom-tools"><button class="tool" id="zoom-out" aria-label="Zoom out">${icon("Minus")}</button><button class="zoom-value" id="fit" title="Fit picture">100%</button><button class="tool" id="zoom-in" aria-label="Zoom in">${icon("Plus")}</button></div><div class="tool-group picture-tools"><button class="tool icon-action" id="show-picture" aria-label="Show the finished picture for a moment" title="Show picture" aria-pressed="false">${icon("Eye")}<span>Show</span></button><button class="tool icon-action" id="hint" aria-label="Hint: find a square to color" title="Find a square to color">${icon("Search")}<span>Hint</span></button></div></div>
+    <div class="viewport" id="viewport"><canvas id="puzzle-canvas" tabindex="0" role="application" aria-label="Coloring grid. Use arrow keys to move and press Space to color. Choose a numbered color first."></canvas></div></div>
+    <aside class="palette-panel"><div class="palette-heading"><h2>Your colors</h2><span id="colors-done"></span></div><div class="brush-control"><span title="Brush size">${icon("Paintbrush")}<span class="sr-only">Brush size</span></span><div class="brush-sizes" role="group" aria-label="Brush size">${[[0,"1 square",4],[1,"Small",7],[3,"Medium",12],[5,"Large",18]].map(([radius,label,size]) => `<button class="brush-size" data-radius="${radius}" aria-label="${label} brush" title="${label}" aria-pressed="${brushRadius === radius}"><span class="brush-dot ${radius === 0 ? "brush-pixel" : ""}" style="--dot-size:${size}px" aria-hidden="true"></span></button>`).join("")}</div></div><div class="palette" id="palette" role="group" aria-label="Numbered colors"></div><div class="selected-info" id="selected-info"></div><div class="completion" id="completion" hidden><span class="complete-flower" aria-hidden="true">${icon("Flower2")}</span><h2>You made this!</h2><p>You colored every square!</p><button class="button primary" id="new-picture">Another picture ${icon("ArrowRight")}</button></div><div class="palette-bottom"><button class="button subtle" id="reset">Start again ${icon("RotateCcw")}</button><span>${record.definition.width} × ${record.definition.height} squares</span></div></aside></div></section>`);
   const canvas = $("#puzzle-canvas"),
     viewport = $("#viewport");
   const renderer = new PuzzleCanvas(canvas, record.definition, state.progress);
   renderer.selected = selected;
+  const hintMarker = new HintMarker(viewport, canvas, record.definition.width);
   let baseSize = 500;
   const fitSize = () => {
     baseSize = fitGrid(
@@ -400,10 +491,7 @@ function showPlay(record) {
       viewport.clientHeight,
     );
     renderer.resize(Math.round(baseSize * scale));
-    $("#canvas-help").firstChild.textContent =
-      renderer.size / record.definition.width < 12
-        ? "Zoom in for bigger numbers, then tap or drag to color."
-        : "Pick a color, then tap or drag over its number.";
+    hintMarker.update();
   };
   const zoom = (value) => {
     if (value === undefined) return scale;
@@ -433,8 +521,9 @@ function showPlay(record) {
       "--number",
       r * 0.299 + g * 0.587 + b * 0.114 > 150 ? "#342b32" : "#fff",
     );
-    button.innerHTML = `<span class="swatch-circle">${p.id}<span class="swatch-check" aria-hidden="true">✓</span></span><span class="swatch-count"></span>`;
+    button.innerHTML = `<span class="swatch-circle">${p.id}<span class="swatch-check" aria-hidden="true">${icon("Check")}</span></span><span class="swatch-count"></span>`;
     button.onclick = () => {
+      hintMarker.clear();
       selected = p.id;
       renderer.selected = selected;
       renderer.draw();
@@ -442,6 +531,21 @@ function showPlay(record) {
     };
     $("#palette").append(button);
   });
+  const celebrate = () => {
+    const phone = window.innerWidth <= 600;
+    const compact = window.innerWidth <= 1000;
+    const options = {
+      colors: ["#edbd59", "#c78365", "#739485", "#9279b0", "#f5a6ba"],
+      shapes: ["circle", "square"], scalar: compact ? 1.2 : 1.6, ticks: 240,
+      gravity: 0.8, disableForReducedMotion: true,
+    };
+    for (const x of [0.15, 0.5, 0.85]) {
+      confetti({ ...options, particleCount: phone ? 20 : compact ? 35 : 60, spread: 160, angle: 270,
+        startVelocity: 22, origin: { x, y: 0.05 } });
+    }
+    confetti({ ...options, particleCount: phone ? 30 : compact ? 45 : 80, spread: 120, startVelocity: compact ? 40 : 60,
+      origin: { x: 0.5, y: 0.9 } });
+  };
   const updateUI = () => {
     const stats = summary(state);
     $("#progress").value = stats.percent;
@@ -449,8 +553,8 @@ function showPlay(record) {
     $("#colors-done").textContent =
       `${Object.values(stats.remaining).filter((n) => n === 0).length} / ${record.definition.palette.length} done`;
     $("#selected-info").textContent = stats.complete
-      ? "All the colors, all filled in."
-      : `color ${selected} · ${stats.remaining[selected]} squares to go`;
+      ? "Picture finished!"
+      : `color ${selected} · ${stats.remaining[selected]} ${stats.remaining[selected] === 1 ? "square" : "squares"} to go`;
     app.querySelectorAll(".swatch").forEach((button) => {
       const id = +button.dataset.id,
         remaining = stats.remaining[id];
@@ -459,7 +563,7 @@ function showPlay(record) {
       button.setAttribute("aria-pressed", id === selected);
       button.setAttribute(
         "aria-label",
-        `color ${id}, ${remaining ? `${remaining} squares left` : "complete"}`,
+        `color ${id}, ${remaining ? `${remaining} ${remaining === 1 ? "square" : "squares"} left` : "complete"}`,
       );
       button.querySelector(".swatch-count").textContent = remaining
         ? `${remaining} left`
@@ -468,10 +572,13 @@ function showPlay(record) {
     $("#undo").disabled = !state.undo.length;
     $("#redo").disabled = !state.redo.length;
     $("#completion").hidden = !stats.complete;
+    $("#hint").disabled = !stats.remaining[selected];
+    if (!stats.complete && wasComplete) confetti.reset();
     if (stats.complete && !wasComplete) {
       $("#completion").classList.remove("celebrate");
       void $("#completion").offsetWidth;
       $("#completion").classList.add("celebrate");
+      celebrate();
       announce("You did it! Your picture is complete.");
     }
     wasComplete = stats.complete;
@@ -492,10 +599,21 @@ function showPlay(record) {
       updateUI();
     }
   };
+  app.querySelectorAll("[data-radius]").forEach((button) => {
+    button.onclick = () => {
+      finish();
+      brushRadius = +button.dataset.radius;
+      app.querySelectorAll("[data-radius]").forEach((item) => {
+        item.setAttribute("aria-pressed", +item.dataset.radius === brushRadius);
+      });
+    };
+  });
   const fill = (index) => {
-    if (renderer.hint || index < 0) return;
-    if (paint(state, index, selected)) renderer.drawCell(index);
-    else if (
+    if (renderer.hint || index < 0 || index >= state.progress.length) return;
+    const changed = paintBrush(state, index, selected, brushRadius);
+    changed.forEach((cell) => renderer.drawCell(cell));
+    if (changed.includes(hintMarker.index)) hintMarker.clear();
+    if (!changed.length &&
       !state.progress[index] &&
       record.definition.cells[index] !== selected
     ) {
@@ -521,12 +639,14 @@ function showPlay(record) {
     announce,
   });
   $("#undo").onclick = () => {
+    hintMarker.clear();
     undo(state);
     renderer.draw();
     updateUI();
     persist(record, state.progress);
   };
   $("#redo").onclick = () => {
+    hintMarker.clear();
     redo(state);
     renderer.draw();
     updateUI();
@@ -535,11 +655,12 @@ function showPlay(record) {
   $("#reset").onclick = async () => {
     if (
       !(await confirmAction(
-        "A fresh start?",
-        "Your coloring will be cleared. You can use Undo if you change your mind.",
+        "Start this picture again?",
+        "This will clear the colors you added. You can press Undo to get them back.",
       ))
     )
       return;
+    hintMarker.clear();
     reset(state);
     renderer.draw();
     updateUI();
@@ -548,24 +669,43 @@ function showPlay(record) {
   $("#zoom-in").onclick = () => zoom(scale + 0.5);
   $("#zoom-out").onclick = () => zoom(scale - 0.5);
   $("#fit").onclick = () => zoom(1);
+  $("#paint-mode").onclick = () => {
+    panning = false;
+    $("#pan").setAttribute("aria-pressed", "false");
+    $("#paint-mode").setAttribute("aria-pressed", "true");
+    canvas.classList.remove("panning");
+  };
   $("#pan").onclick = () => {
     panning = !panning;
     $("#pan").setAttribute("aria-pressed", panning);
+    $("#paint-mode").setAttribute("aria-pressed", !panning);
     canvas.classList.toggle("panning", panning);
   };
-  $("#hint").onclick = () => {
+  $("#show-picture").onclick = () => {
+    hintMarker.clear();
     renderer.hint = !renderer.hint;
-    $("#hint").setAttribute("aria-pressed", renderer.hint);
+    $("#show-picture").setAttribute("aria-pressed", renderer.hint);
     renderer.draw();
     clearTimeout(hintTimer);
     if (renderer.hint)
       hintTimer = setTimeout(() => {
         renderer.hint = false;
-        $("#hint")?.setAttribute("aria-pressed", "false");
+        $("#show-picture")?.setAttribute("aria-pressed", "false");
         renderer.draw();
       }, 2200);
   };
-  $("#new-picture").onclick = inputFile;
+  $("#hint").onclick = () => {
+    const index = findHint(state, selected);
+    if (index < 0) return;
+    clearTimeout(hintTimer);
+    renderer.hint = false;
+    $("#show-picture").setAttribute("aria-pressed", "false");
+    renderer.draw();
+    zoom(Math.max(scale, Math.min(4, record.definition.width * 16 / baseSize)));
+    hintMarker.show(index);
+    announce(`Hint: color ${selected}, row ${Math.floor(index / record.definition.width) + 1}, column ${index % record.definition.width + 1}.`);
+  };
+  $("#new-picture").onclick = () => navigate("#/create");
   const keyboard = (event) => {
     if (
       !(event.ctrlKey || event.metaKey) ||
@@ -588,6 +728,8 @@ function showPlay(record) {
     cancelAnimationFrame(resizeFrame);
     clearTimeout(hintTimer);
     clearTimeout(wrongTimer);
+    hintMarker.clear();
+    confetti.reset();
     document.removeEventListener("keydown", keyboard);
   };
   fitSize();
@@ -627,6 +769,11 @@ document.addEventListener("visibilitychange", () => {
 });
 window.addEventListener("pagehide", () => {
   if (current) persist(current.record, current.state.progress);
+});
+document.querySelector("#library-link span").innerHTML = icon("Images");
+if (import.meta.env.PROD) initOffline((status) => {
+  offlineStatus = status;
+  document.querySelectorAll("[data-offline-status]").forEach((label) => { label.textContent = status; });
 });
 window.addEventListener("hashchange", renderRoute);
 renderRoute();

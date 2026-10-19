@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "vite build",
+    "build": "vite build && node scripts/build-offline.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "test": "node --test tests/*.test.js"
   },
   "dependencies": {
-    "image-q": "^4.0.0"
+    "canvas-confetti": "^1.9.4",
+    "image-q": "^4.0.0",
+    "lucide": "^1.59.0"
   },
   "devDependencies": {
     "vite": "^7.1.0"
