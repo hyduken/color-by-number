@@ -49,14 +49,12 @@ With the dev server running, open `/tests/browser.html` for real-browser Canvas,
 
 See [verification notes](docs/verification.md) for tested behaviour and limits.
 
-## Offline and picture navigation
+## Picture navigation and saved data
 
-After the first production visit, wait for **Ready offline** before disconnecting. The app shell and all four starter images are precached, so pages can be refreshed, pictures selected, puzzles created and progress saved without a network. Cloud-only device photos may need to be downloaded first. Camera capture uses the native device picker where supported; other browsers may offer file selection. Actual camera availability depends on the device and browser.
-
-The build creates a versioned `dist/sw.js` from the actual output files. New versions wait until old tabs close before taking over; updates do not interrupt a coloring session. Failed installs keep an older offline version intact. Service workers are only registered in production builds, not the Vite development server. Clearing site data or browser storage eviction can remove the offline copy and puzzles; private browsing can limit persistence. The external hyduken.com credit link requires a connection.
+The app needs an internet connection to load. Photos are processed in your browser, and pictures and coloring progress are saved locally in that browser on that device. Clearing site data can remove those saves. The external hyduken.com credit link also needs a connection.
 
 `#/create` is the picture chooser, `#/crop` the current session's crop editor, `#/library` all saved pictures and works in progress, and `#/puzzle/<id>` an individual saved puzzle. The homepage shows the seven most recently updated saved puzzles. Existing saves remain compatible. Crop images are kept in memory until a puzzle is created; refreshing the crop editor returns to the chooser.
 
-Icons use locally bundled [Lucide](https://lucide.dev/license) SVGs. Confetti uses [canvas-confetti](https://github.com/catdad/canvas-confetti). Both are ISC licensed; notices ship in `public/licenses/`. Neither requires a runtime external service.
+Icons use locally bundled [Lucide](https://lucide.dev/license) SVGs. Confetti uses [canvas-confetti](https://github.com/catdad/canvas-confetti). Both are ISC licensed; notices ship in `public/licenses/`. Neither requires a runtime external service. `public/sw.js` temporarily removes offline caches and registrations made by earlier app versions; it does not clear saved pictures.
 
 The drawing view keeps colors in a single scrolling row at the bottom in portrait, and a single scrolling column on the right in landscape. Color targets remain 48px wide. The chooser, crop and drawing screens hide the main site header and footer while keeping their local navigation.

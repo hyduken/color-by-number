@@ -1,5 +1,11 @@
 # Verification — 18 October 2026
 
+## 2026-10-19: disable offline caching and retire old workers
+
+- The app no longer registers a service worker or presents offline-ready status. A static `/sw.js` cleanup worker removes only `color-by-number-app-*` caches, unregisters itself and reloads existing pages. IndexedDB saves are untouched.
+- Decorative stars and difficulty symbols use locally bundled Lucide SVGs to avoid Android's emoji glyph substitution.
+- The cleanup path needs a production deployment and a previously cached Android/iOS browser to verify end to end.
+
 - Node unit checks: dimensions, palette bounds, valid cell references, transparent, tiny, large and single-colour input, deterministic quantisation without input mutation, invalid inputs, matching-only paint, stroke undo/redo, new-stroke redo invalidation, completion, progress serialisation, undoable reset, coordinate boundaries, partial transparency, drag interpolation and height-aware canvas fitting and extra-finger gesture protection.
 - Browser self-checks (`/tests/browser.html`): crop position and aspect ratio; all five grid sizes; JPEG/PNG/WebP decode and JPEG EXIF orientation; unsupported, malformed and oversized files; 3200×2400 input reduction to 1600×1200; transparency; IndexedDB creation, update and restoration of definition, settings, source Blob and progress.
 - Interactive browser checks: 404×827 phone layout without horizontal overflow; 1280×720 desktop layout; actual file-picker upload; clipboard image paste; generated preview; presets; drag colouring; undo and redo; keyboard painting; zoom; pointer pan; progress restoration after reload; 256-cell completion and celebration.

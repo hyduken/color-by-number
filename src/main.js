@@ -5,7 +5,6 @@ import { HintMarker } from "./renderer/hint.js";
 import { bindCropInteraction } from "./image/crop-interaction.js";
 import { starterPictures, loadStarter } from "./image/starters.js";
 import { recentPuzzles } from "./puzzle/library.js";
-import { initOffline } from "./offline/register.js";
 import {
   loadImage,
   cropImage,
@@ -47,8 +46,6 @@ const memoryRecords = new Map();
 let saveQueue = Promise.resolve();
 let routeRevision = 0;
 let brushRadius = 3;
-let offlineStatus = import.meta.env.PROD ? "Saving the app for offline use…" : "Offline caching is enabled in the production build.";
-const offlineLabel = () => `<p class="offline-status" role="status" data-offline-status>${offlineStatus}</p>`;
 const footer = () => `<footer>Color a picture, one square at a time.<span class="footer-links"><a href="#/parents">For parents</a><a href="https://hyduken.com/">made by hyduken</a></span></footer>`;
 
 function navigate(hash) {
@@ -198,17 +195,16 @@ function showParents() {
     <div class="parents-heading"><h1>For parents</h1><p>How this app keeps your pictures private.</p></div>
     <section><h2>Your pictures stay on your device</h2><p>Photos are processed right in your browser to make a color-by-number picture. They aren’t uploaded to a server, and your puzzle and coloring progress are saved in this browser on this device.</p></section>
     <section><h2>No accounts, ads or trackers</h2><p>There’s no sign-up and no profile to create. The app has no ads or tracking tools.</p></section>
-    <section><h2>Use the app offline</h2><p>On your first visit, wait for “Ready offline”. The app and all starter pictures will then be saved for use without an internet connection. Pictures already on your device can be used offline too. Your browser may clear this saved copy if storage is low.</p></section>
     <p class="parents-note">If you clear this browser’s stored site data, saved pictures and progress may be removed.</p>
     <footer>Color a picture, one square at a time.<a href="https://hyduken.com/">made by hyduken</a></footer>
   </section>`);
 }
 async function showHome(revision = routeRevision) {
   mount(`<section class="home-hero">
-    <div class="hero-copy"><h1>Choose a picture.<br>Let’s <em>color!</em><span class="spark" aria-hidden="true">✳</span></h1>
+    <div class="hero-copy"><h1>Choose a picture.<br>Let’s <em>color!</em><span class="spark" aria-hidden="true">${icon("Asterisk")}</span></h1>
     <p>Choose a picture, then match the colors to the numbers.</p>
     <div class="upload-zone" id="drop-zone"><button class="button primary upload-button" id="upload">${icon("Plus")} Choose a picture</button><span>or drop it here · JPG, PNG, WebP</span></div>
-    <p class="local-note">${icon("House")} Your pictures stay right here, on your device.</p><a class="parents-link" href="#/parents">For parents ${icon("ArrowRight")}</a>${offlineLabel()}</div>
+    <p class="local-note">${icon("House")} Your pictures stay right here, on your device.</p><a class="parents-link" href="#/parents">For parents ${icon("ArrowRight")}</a></div>
     <div class="hero-art"><div class="art-tape" aria-hidden="true"></div><div class="art-paper"><img class="hero-picture" src="/images/hero-fox.png" alt="A woodland fox, partly colored by number" width="728" height="728"><div class="art-caption"><span>Match the colors to the numbers.</span><span aria-hidden="true">☀</span></div></div><div class="floating-swatch swatch-yellow" aria-hidden="true">1</div><div class="floating-swatch swatch-green" aria-hidden="true">3</div></div>
     </section>
     <section class="library" id="library"><div class="section-heading"><h2>Your recent pictures</h2><a class="parents-link" href="#/library">See all pictures ${icon("ArrowRight")}</a></div><div id="saved-puzzles" class="saved-grid"><p class="muted">Loading your pictures…</p></div></section>
@@ -236,7 +232,7 @@ async function renderSavedPictures(limit = Infinity, revision = routeRevision) {
   const records = recentPuzzles(memoryRecords.values(), limit);
   if ($("#library-count")) $("#library-count").textContent = `${memoryRecords.size} ${memoryRecords.size === 1 ? "picture" : "pictures"}`;
   $("#saved-puzzles").innerHTML = limit === 7
-    ? `<a class="demo-card" href="#/create"><span class="demo-flower" aria-hidden="true">✿</span><strong>Choose a picture</strong><span>See our starter pictures ${icon("ArrowRight")}</span></a>`
+    ? `<a class="demo-card" href="#/create"><span class="demo-flower" aria-hidden="true">${icon("Flower2")}</span><strong>Choose a picture</strong><span>See our starter pictures ${icon("ArrowRight")}</span></a>`
     : records.length ? "" : '<p class="muted">No pictures saved yet. Choose a picture to start coloring.</p>';
   records.forEach((record) => {
     const filled = record.progress.filter(Boolean).length;
@@ -272,11 +268,11 @@ async function renderSavedPictures(limit = Infinity, revision = routeRevision) {
 
 }
 function showLibrary(revision) {
-  mount(`<section class="create-screen collection-screen"><div class="collection-heading"><div><h1>All pictures</h1><p>Keep coloring a picture or see the ones you’ve finished.</p></div><a class="button primary" href="#/create">Choose a picture ${icon("ArrowRight")}</a></div>${offlineLabel()}<div class="section-heading"><h2>Your pictures</h2><span id="library-count"></span></div><div id="saved-puzzles" class="saved-grid"><p class="muted">Loading your pictures…</p></div></section>${footer()}`);
+  mount(`<section class="create-screen collection-screen"><div class="collection-heading"><div><h1>All pictures</h1><p>Keep coloring a picture or see the ones you’ve finished.</p></div><a class="button primary" href="#/create">Choose a picture ${icon("ArrowRight")}</a></div><div class="section-heading"><h2>Your pictures</h2><span id="library-count"></span></div><div id="saved-puzzles" class="saved-grid"><p class="muted">Loading your pictures…</p></div></section>${footer()}`);
   renderSavedPictures(Infinity, revision);
 }
 function showChooser() {
-  mount(`<section class="create-screen chooser-screen"><a class="back-button" href="#/library">${icon("ArrowLeft")} All pictures</a><div class="create-heading"><h1>Choose a picture.</h1><p>Choose a starter picture, use your own picture, or take a photo.</p></div><div class="picture-sources"><button class="button secondary" id="choose-file">${icon("ImagePlus")} Choose from your device</button><button class="button secondary" id="take-photo">${icon("Camera")} Take a photo</button></div><p class="muted source-note">Your device may offer a photo picker instead of a camera. Your pictures stay on this device.</p>${offlineLabel()}<div class="section-heading"><h2>Our starter pictures</h2><span>Choose one to color</span></div><div class="starter-grid">${starterPictures.map((picture) => `<button class="starter-card" data-starter="${picture.id}"><img src="${picture.url}" alt="${picture.title}" width="640" height="640"><strong>${picture.title}</strong><span>Use this picture ${icon("ArrowRight")}</span></button>`).join("")}</div></section>${footer()}`);
+  mount(`<section class="create-screen chooser-screen"><a class="back-button" href="#/library">${icon("ArrowLeft")} All pictures</a><div class="create-heading"><h1>Choose a picture.</h1><p>Choose a starter picture, use your own picture, or take a photo.</p></div><div class="picture-sources"><button class="button secondary" id="choose-file">${icon("ImagePlus")} Choose from your device</button><button class="button secondary" id="take-photo">${icon("Camera")} Take a photo</button></div><p class="muted source-note">Your device may offer a photo picker instead of a camera. Your pictures stay on this device.</p><div class="section-heading"><h2>Our starter pictures</h2><span>Choose one to color</span></div><div class="starter-grid">${starterPictures.map((picture) => `<button class="starter-card" data-starter="${picture.id}"><img src="${picture.url}" alt="${picture.title}" width="640" height="640"><strong>${picture.title}</strong><span>Use this picture ${icon("ArrowRight")}</span></button>`).join("")}</div></section>${footer()}`);
   $("#choose-file").onclick = () => inputFile();
   $("#take-photo").onclick = () => inputFile(true);
   app.querySelectorAll("[data-starter]").forEach((button) => {
@@ -304,7 +300,7 @@ function showChooser() {
 function showCreate() {
   mount(`<section class="create-screen crop-screen"><a class="back-button" id="back" href="#/library">${icon("ArrowLeft")} All pictures</a><div class="create-heading"><h1>Get your picture ready.</h1><p>Move and zoom your picture, then choose how hard to make it.</p></div>
     <div class="create-layout"><section class="picture-panel"><div class="panel-heading"><h2>Your picture</h2><button class="button subtle" id="change-image">Change</button></div><div class="crop-frame"><canvas id="crop-preview" tabindex="0" aria-label="Your picture. Drag to move it, pinch or use the slider to zoom, or use arrow keys to move."></canvas></div><p class="crop-help"><span class="mouse-crop-help">Drag to move · use the slider to zoom</span><span class="touch-crop-help">Drag to move · pinch to zoom</span></p><div class="crop-preview-tools"><div class="crop-controls"><label>Picture zoom<input id="crop-zoom" type="range" min="1" max="3" step="0.01" value="${settings.zoom}"></label></div><div class="generated-preview" id="generated-preview"><div class="preview-placeholder"><span aria-hidden="true">▦</span>Your picture will appear here</div></div></div><div class="preview-meta" id="preview-meta" role="status" aria-live="polite"></div></section>
-    <section class="settings-panel"><div class="presets" role="group" aria-label="Difficulty"><button class="preset active" data-grid="16" data-colors="6"><span aria-hidden="true">✿</span>Easy<small>16 × 16 squares</small></button><button class="preset" data-grid="32" data-colors="8"><span aria-hidden="true">✳</span>Medium<small>32 × 32 squares</small></button><button class="preset" data-grid="64" data-colors="16"><span aria-hidden="true">✷</span>Hard<small>64 × 64 squares</small></button><button class="preset" data-grid="128" data-colors="32"><span aria-hidden="true">✹</span>Extra hard<small>128 × 128 squares</small></button></div><div class="select-row"><label>Picture size<select id="grid-size">${[16, 24, 32, 48, 64, 128].map((n) => `<option value="${n}" ${settings.grid === n ? "selected" : ""}>${n} × ${n}</option>`).join("")}</select></label><label>Number of colors<select id="palette-size">${[6, 8, 12, 16, 24, 32].map((n) => `<option value="${n}" ${settings.colors === n ? "selected" : ""}>${n} colors</option>`).join("")}</select></label></div><label class="title-label">Picture name<input id="picture-title" maxlength="60" value="${escape(source.title)}"></label><button class="button primary" id="start" disabled>Let’s color ${icon("ArrowRight")}</button></section></div></section>`);
+    <section class="settings-panel"><div class="presets" role="group" aria-label="Difficulty"><button class="preset active" data-grid="16" data-colors="6"><span aria-hidden="true">${icon("Flower2")}</span>Easy<small>16 × 16 squares</small></button><button class="preset" data-grid="32" data-colors="8"><span aria-hidden="true">${icon("Asterisk")}</span>Medium<small>32 × 32 squares</small></button><button class="preset" data-grid="64" data-colors="16"><span aria-hidden="true">${icon("Star")}</span>Hard<small>64 × 64 squares</small></button><button class="preset" data-grid="128" data-colors="32"><span aria-hidden="true">${icon("Sparkles")}</span>Extra hard<small>128 × 128 squares</small></button></div><div class="select-row"><label>Picture size<select id="grid-size">${[16, 24, 32, 48, 64, 128].map((n) => `<option value="${n}" ${settings.grid === n ? "selected" : ""}>${n} × ${n}</option>`).join("")}</select></label><label>Number of colors<select id="palette-size">${[6, 8, 12, 16, 24, 32].map((n) => `<option value="${n}" ${settings.colors === n ? "selected" : ""}>${n} colors</option>`).join("")}</select></label></div><label class="title-label">Picture name<input id="picture-title" maxlength="60" value="${escape(source.title)}"></label><button class="button primary" id="start" disabled>Let’s color ${icon("ArrowRight")}</button></section></div></section>`);
   $("#change-image").onclick = () => navigate("#/create");
   $("#picture-title").oninput = (event) => {
     source.title = event.target.value;
@@ -755,9 +751,5 @@ window.addEventListener("pagehide", () => {
   if (current) persist(current.record, current.state.progress);
 });
 document.querySelector("#library-link span").innerHTML = icon("Images");
-if (import.meta.env.PROD) initOffline((status) => {
-  offlineStatus = status;
-  document.querySelectorAll("[data-offline-status]").forEach((label) => { label.textContent = status; });
-});
 window.addEventListener("hashchange", renderRoute);
 renderRoute();
