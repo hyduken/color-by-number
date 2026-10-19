@@ -2,6 +2,7 @@ import "./styles/main.css";
 import confetti from "canvas-confetti";
 import { icon } from "./ui/icons.js";
 import { HintMarker } from "./renderer/hint.js";
+import { bindCropInteraction } from "./image/crop-interaction.js";
 import { starterPictures, loadStarter } from "./image/starters.js";
 import { recentPuzzles } from "./puzzle/library.js";
 import { initOffline } from "./offline/register.js";
@@ -13,7 +14,7 @@ import {
 import {
   createState,
   paintBrush,
-  findHint,
+  findHints,
   endStroke,
   undo,
   redo,
@@ -126,7 +127,9 @@ function mount(html) {
   dispose();
   dispose = () => {};
   app.innerHTML = html;
+  document.documentElement.classList.toggle("touch-input", navigator.maxTouchPoints > 0);
   document.body.classList.toggle("playing", !!app.querySelector(".play-screen"));
+  document.body.classList.toggle("focused", !!app.querySelector(".play-screen, .chooser-screen, .crop-screen"));
   window.scrollTo(0, 0);
 }
 function confirmAction(title, copy) {
@@ -206,34 +209,13 @@ async function showHome(revision = routeRevision) {
     <p>Choose a picture, then match the colors to the numbers.</p>
     <div class="upload-zone" id="drop-zone"><button class="button primary upload-button" id="upload">${icon("Plus")} Choose a picture</button><span>or drop it here · JPG, PNG, WebP</span></div>
     <p class="local-note">${icon("House")} Your pictures stay right here, on your device.</p><a class="parents-link" href="#/parents">For parents ${icon("ArrowRight")}</a>${offlineLabel()}</div>
-    <div class="hero-art"><div class="art-tape" aria-hidden="true"></div><div class="art-paper"><canvas id="hero-canvas" aria-label="A woodland fox, partly colored by number"></canvas><div class="art-caption"><span>Match the colors to the numbers.</span><span aria-hidden="true">☀</span></div></div><div class="floating-swatch swatch-yellow" aria-hidden="true">1</div><div class="floating-swatch swatch-green" aria-hidden="true">3</div></div>
+    <div class="hero-art"><div class="art-tape" aria-hidden="true"></div><div class="art-paper"><img class="hero-picture" src="/images/hero-fox.png" alt="A woodland fox, partly colored by number" width="728" height="728"><div class="art-caption"><span>Match the colors to the numbers.</span><span aria-hidden="true">☀</span></div></div><div class="floating-swatch swatch-yellow" aria-hidden="true">1</div><div class="floating-swatch swatch-green" aria-hidden="true">3</div></div>
     </section>
     <section class="library" id="library"><div class="section-heading"><h2>Your recent pictures</h2><a class="parents-link" href="#/library">See all pictures ${icon("ArrowRight")}</a></div><div id="saved-puzzles" class="saved-grid"><p class="muted">Loading your pictures…</p></div></section>
     ${footer()}`);
   $("#upload").onclick = () => navigate("#/create");
   renderSavedPictures(7, revision);
-  let demo;
-  try {
-    demo = (await loadStarter("fox")).canvas;
-  } catch {
-    return;
-  }
-  if (revision !== routeRevision || !$("#hero-canvas")) return;
-  const definition = processImage(demo, {
-    grid: 32,
-    colors: 12,
-    x: 50,
-    y: 50,
-    zoom: 1,
-  });
-  const renderer = new PuzzleCanvas(
-    $("#hero-canvas"),
-    definition,
-    definition.cells.map(
-      (_, i) => i % 32 < 14 || (Math.floor(i / 32) > 20 && i % 32 < 22),
-    ),
-  );
-  renderer.resize(400);
+
 }
 async function renderSavedPictures(limit = Infinity, revision = routeRevision) {
   try {
@@ -320,9 +302,9 @@ function showChooser() {
   });
 }
 function showCreate() {
-  mount(`<section class="create-screen"><a class="back-button" id="back" href="#/library">${icon("ArrowLeft")} All pictures</a><div class="create-heading"><h1>Get your picture ready.</h1><p>Move and zoom your picture, then choose how hard to make it.</p></div>
-    <div class="create-layout"><section class="picture-panel"><div class="panel-heading"><h2>Your picture</h2><button class="button subtle" id="change-image">Change</button></div><div class="crop-frame"><canvas id="crop-preview" tabindex="0" aria-label="Your picture. Drag to move it, or use the arrow keys."></canvas></div><p class="crop-help">Drag to move your picture · or use arrow keys</p><div class="crop-controls"><label>Picture zoom<input id="crop-zoom" type="range" min="1" max="3" step="0.1" value="${settings.zoom}"></label></div></section>
-    <section class="settings-panel"><h2>Easy or hard?</h2><div class="presets" role="group" aria-label="Difficulty"><button class="preset active" data-grid="16" data-colors="6"><span aria-hidden="true">✿</span>Easy<small>16 × 16 squares</small></button><button class="preset" data-grid="32" data-colors="8"><span aria-hidden="true">✳</span>Medium<small>32 × 32 squares</small></button><button class="preset" data-grid="64" data-colors="16"><span aria-hidden="true">✷</span>Hard<small>64 × 64 squares</small></button><button class="preset" data-grid="128" data-colors="32"><span aria-hidden="true">✹</span>Extra hard<small>128 × 128 squares</small></button></div><div class="select-row"><label>Picture size<select id="grid-size">${[16, 24, 32, 48, 64, 128].map((n) => `<option value="${n}" ${settings.grid === n ? "selected" : ""}>${n} × ${n}</option>`).join("")}</select></label><label>Number of colors<select id="palette-size">${[6, 8, 12, 16, 24, 32].map((n) => `<option value="${n}" ${settings.colors === n ? "selected" : ""}>${n} colors</option>`).join("")}</select></label></div><label class="title-label">Picture name<input id="picture-title" maxlength="60" value="${escape(source.title)}"></label><div class="generated-preview" id="generated-preview"><div class="preview-placeholder"><span aria-hidden="true">▦</span>Your picture will appear here</div></div><div class="preview-meta" id="preview-meta" role="status" aria-live="polite"></div><button class="button primary" id="start" disabled>Let’s color ${icon("ArrowRight")}</button></section></div></section>`);
+  mount(`<section class="create-screen crop-screen"><a class="back-button" id="back" href="#/library">${icon("ArrowLeft")} All pictures</a><div class="create-heading"><h1>Get your picture ready.</h1><p>Move and zoom your picture, then choose how hard to make it.</p></div>
+    <div class="create-layout"><section class="picture-panel"><div class="panel-heading"><h2>Your picture</h2><button class="button subtle" id="change-image">Change</button></div><div class="crop-frame"><canvas id="crop-preview" tabindex="0" aria-label="Your picture. Drag to move it, pinch or use the slider to zoom, or use arrow keys to move."></canvas></div><p class="crop-help"><span class="mouse-crop-help">Drag to move · use the slider to zoom</span><span class="touch-crop-help">Drag to move · pinch to zoom</span></p><div class="crop-preview-tools"><div class="crop-controls"><label>Picture zoom<input id="crop-zoom" type="range" min="1" max="3" step="0.01" value="${settings.zoom}"></label></div><div class="generated-preview" id="generated-preview"><div class="preview-placeholder"><span aria-hidden="true">▦</span>Your picture will appear here</div></div></div><div class="preview-meta" id="preview-meta" role="status" aria-live="polite"></div></section>
+    <section class="settings-panel"><div class="presets" role="group" aria-label="Difficulty"><button class="preset active" data-grid="16" data-colors="6"><span aria-hidden="true">✿</span>Easy<small>16 × 16 squares</small></button><button class="preset" data-grid="32" data-colors="8"><span aria-hidden="true">✳</span>Medium<small>32 × 32 squares</small></button><button class="preset" data-grid="64" data-colors="16"><span aria-hidden="true">✷</span>Hard<small>64 × 64 squares</small></button><button class="preset" data-grid="128" data-colors="32"><span aria-hidden="true">✹</span>Extra hard<small>128 × 128 squares</small></button></div><div class="select-row"><label>Picture size<select id="grid-size">${[16, 24, 32, 48, 64, 128].map((n) => `<option value="${n}" ${settings.grid === n ? "selected" : ""}>${n} × ${n}</option>`).join("")}</select></label><label>Number of colors<select id="palette-size">${[6, 8, 12, 16, 24, 32].map((n) => `<option value="${n}" ${settings.colors === n ? "selected" : ""}>${n} colors</option>`).join("")}</select></label></div><label class="title-label">Picture name<input id="picture-title" maxlength="60" value="${escape(source.title)}"></label><button class="button primary" id="start" disabled>Let’s color ${icon("ArrowRight")}</button></section></div></section>`);
   $("#change-image").onclick = () => navigate("#/create");
   $("#picture-title").oninput = (event) => {
     source.title = event.target.value;
@@ -363,52 +345,26 @@ function showCreate() {
     }, 180);
   };
   dispose = () => clearTimeout(previewTimer);
-  const setPosition = (x, y) => {
-    const nextX = Math.max(0, Math.min(100, x));
-    const nextY = Math.max(0, Math.min(100, y));
-    if (nextX === settings.x && nextY === settings.y) return;
-    settings.x = nextX;
-    settings.y = nextY;
+  const updateCrop = ({ x = settings.x, y = settings.y, zoom = settings.zoom }) => {
+    x = Math.max(0, Math.min(100, x));
+    y = Math.max(0, Math.min(100, y));
+    zoom = Math.max(1, Math.min(3, zoom));
+    if (x === settings.x && y === settings.y && zoom === settings.zoom) return;
+    Object.assign(settings, { x, y, zoom });
+    $("#crop-zoom").value = zoom;
     drawCrop();
     updatePreview();
   };
   const cropPreview = $("#crop-preview");
-  let dragStart;
-  cropPreview.onpointerdown = (event) => {
-    event.preventDefault();
-    cropPreview.setPointerCapture(event.pointerId);
-    dragStart = {
-      x: event.clientX,
-      y: event.clientY,
-      positionX: settings.x,
-      positionY: settings.y,
-      bounds: cropPreview.getBoundingClientRect(),
-    };
-  };
-  cropPreview.onpointermove = (event) => {
-    if (!dragStart || !cropPreview.hasPointerCapture(event.pointerId)) return;
-    setPosition(
-      dragStart.positionX -
-        ((event.clientX - dragStart.x) / dragStart.bounds.width) * 100,
-      dragStart.positionY -
-        ((event.clientY - dragStart.y) / dragStart.bounds.height) * 100,
-    );
-  };
-  cropPreview.onpointerup = cropPreview.onpointercancel = () => {
-    dragStart = null;
-  };
+  bindCropInteraction({ canvas: cropPreview, source: source.canvas, settings, onChange: updateCrop });
   cropPreview.onkeydown = (event) => {
     const moves = { ArrowLeft: [-2, 0], ArrowRight: [2, 0], ArrowUp: [0, -2], ArrowDown: [0, 2] };
     const move = moves[event.key];
     if (!move) return;
     event.preventDefault();
-    setPosition(settings.x + move[0], settings.y + move[1]);
+    updateCrop({ x: settings.x + move[0], y: settings.y + move[1] });
   };
-  $("#crop-zoom").oninput = (event) => {
-    settings.zoom = +event.target.value;
-    drawCrop();
-    updatePreview();
-  };
+  $("#crop-zoom").oninput = (event) => updateCrop({ zoom: +event.target.value });
   const updatePresets = () =>
     app.querySelectorAll(".preset").forEach((button) => {
       const active =
@@ -474,11 +430,15 @@ function showPlay(record) {
     wasComplete = summary(state).complete,
     hintTimer,
     wrongTimer,
-    resizeFrame;
+    resizeFrame,
+    visibleColor;
   mount(`<section class="play-screen"><div class="play-heading"><a class="back-button" id="back" href="#/library">${icon("ArrowLeft")} My pictures</a><div class="play-title"><h1>${escape(record.title)}</h1><span id="progress-text"></span></div></div><progress id="progress" max="100" value="0" aria-label="Puzzle completion"></progress>
-    <div class="workspace"><div class="canvas-area"><div class="canvas-toolbar"><div class="tool-group mode-tools"><button class="tool" id="undo" aria-label="Undo coloring" title="Undo (Ctrl/⌘ Z)">${icon("Undo2")}</button><button class="tool" id="redo" aria-label="Redo coloring" title="Redo (Ctrl/⌘ Shift Z)">${icon("Redo2")}</button><button class="tool" id="paint-mode" aria-label="Paint with brush" aria-pressed="true" title="Paint">${icon("Paintbrush")}</button><button class="tool" id="pan" aria-label="Move picture" aria-pressed="false" title="Move picture">${icon("Hand")}</button></div><div class="tool-group zoom-tools"><button class="tool" id="zoom-out" aria-label="Zoom out">${icon("Minus")}</button><button class="zoom-value" id="fit" title="Fit picture">100%</button><button class="tool" id="zoom-in" aria-label="Zoom in">${icon("Plus")}</button></div><div class="tool-group picture-tools"><button class="tool icon-action" id="show-picture" aria-label="Show the finished picture for a moment" title="Show picture" aria-pressed="false">${icon("Eye")}<span>Show</span></button><button class="tool icon-action" id="hint" aria-label="Hint: find a square to color" title="Find a square to color">${icon("Search")}<span>Hint</span></button></div></div>
+    <div class="workspace"><div class="canvas-area"><div class="canvas-toolbar" role="toolbar" aria-label="Coloring tools"><button class="tool" id="undo" aria-label="Undo coloring" title="Undo">${icon("Undo2")}</button><button class="tool" id="paint-mode" aria-label="Paint and choose brush size" aria-pressed="true" popovertarget="brush-settings" title="Brush size">${icon("Paintbrush")}</button><button class="tool" id="pan" aria-label="Move picture" aria-pressed="false" title="Move picture">${icon("Hand")}</button><button class="tool icon-action" id="show-picture" aria-label="Show the finished picture for a moment" aria-pressed="false">${icon("Eye")}<span>Show</span></button><button class="tool icon-action" id="hint" aria-label="Hint: show all remaining squares of this color">${icon("Search")}<span>Hint</span></button><button class="tool" popovertarget="picture-options" aria-label="More picture tools" title="More tools">${icon("Ellipsis")}</button></div>
     <div class="viewport" id="viewport"><canvas id="puzzle-canvas" tabindex="0" role="application" aria-label="Coloring grid. Use arrow keys to move and press Space to color. Choose a numbered color first."></canvas></div></div>
-    <aside class="palette-panel"><div class="palette-heading"><h2>Your colors</h2><span id="colors-done"></span></div><div class="brush-control"><span title="Brush size">${icon("Paintbrush")}<span class="sr-only">Brush size</span></span><div class="brush-sizes" role="group" aria-label="Brush size">${[[0,"1 square",4],[1,"Small",7],[3,"Medium",12],[5,"Large",18]].map(([radius,label,size]) => `<button class="brush-size" data-radius="${radius}" aria-label="${label} brush" title="${label}" aria-pressed="${brushRadius === radius}"><span class="brush-dot ${radius === 0 ? "brush-pixel" : ""}" style="--dot-size:${size}px" aria-hidden="true"></span></button>`).join("")}</div></div><div class="palette" id="palette" role="group" aria-label="Numbered colors"></div><div class="selected-info" id="selected-info"></div><div class="completion" id="completion" hidden><span class="complete-flower" aria-hidden="true">${icon("Flower2")}</span><h2>You made this!</h2><p>You colored every square!</p><button class="button primary" id="new-picture">Another picture ${icon("ArrowRight")}</button></div><div class="palette-bottom"><button class="button subtle" id="reset">Start again ${icon("RotateCcw")}</button><span>${record.definition.width} × ${record.definition.height} squares</span></div></aside></div></section>`);
+    <aside class="palette-panel" aria-label="Your colors"><div class="palette" id="palette" role="group" aria-label="Numbered colors"></div></aside></div>
+    <div class="play-popover" id="brush-settings" popover><h2>Brush size</h2><div class="brush-sizes" role="group" aria-label="Brush size">${[[0,"1 square",4],[1,"Small",7],[3,"Medium",12],[5,"Large",18]].map(([radius,label,size]) => `<button class="brush-size" data-radius="${radius}" aria-label="${label} brush" title="${label}" aria-pressed="${brushRadius === radius}"><span class="brush-dot ${radius === 0 ? "brush-pixel" : ""}" style="--dot-size:${size}px" aria-hidden="true"></span></button>`).join("")}</div></div>
+    <div class="play-popover" id="picture-options" popover><h2>Picture tools</h2><div class="tool-group"><button class="tool" id="zoom-out" aria-label="Zoom out">${icon("Minus")}</button><button class="zoom-value" id="fit" title="Fit picture">100%</button><button class="tool" id="zoom-in" aria-label="Zoom in">${icon("Plus")}</button><button class="tool" id="redo" aria-label="Redo coloring" title="Redo">${icon("Redo2")}</button></div><p id="colors-done"></p><div class="selected-info" id="selected-info"></div><button class="button subtle" id="reset">Start again ${icon("RotateCcw")}</button><p class="picture-dimensions">${record.definition.width} × ${record.definition.height} squares</p></div>
+    <dialog class="completion-dialog" id="completion-dialog" aria-labelledby="completion-title"><div class="completion-card"><button class="completion-close" id="completion-close" aria-label="Close and see your picture">${icon("X")}</button><span class="complete-flower" aria-hidden="true">${icon("Flower2")}</span><h2 id="completion-title">Hooray! You finished!</h2><p>Every square is colored. What would you like to do?</p><div class="completion-actions"><button class="button primary" id="new-picture">Another picture ${icon("ArrowRight")}</button><button class="button secondary" id="completion-reset">Start again ${icon("RotateCcw")}</button></div></div></dialog></section>`);
   const canvas = $("#puzzle-canvas"),
     viewport = $("#viewport");
   const renderer = new PuzzleCanvas(canvas, record.definition, state.progress);
@@ -552,6 +512,7 @@ function showPlay(record) {
     $("#progress-text").textContent = `${stats.percent}% colored`;
     $("#colors-done").textContent =
       `${Object.values(stats.remaining).filter((n) => n === 0).length} / ${record.definition.palette.length} done`;
+    $("#selected-info").hidden = stats.complete;
     $("#selected-info").textContent = stats.complete
       ? "Picture finished!"
       : `color ${selected} · ${stats.remaining[selected]} ${stats.remaining[selected] === 1 ? "square" : "squares"} to go`;
@@ -569,17 +530,27 @@ function showPlay(record) {
         ? `${remaining} left`
         : "Done!";
     });
+    if (visibleColor !== selected) {
+      app.querySelector(`.swatch[data-id="${selected}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
+      visibleColor = selected;
+    }
     $("#undo").disabled = !state.undo.length;
     $("#redo").disabled = !state.redo.length;
-    $("#completion").hidden = !stats.complete;
+    const completionDialog = $("#completion-dialog");
+    $("#reset").hidden = stats.complete && completionDialog.open;
+    $("#selected-info").hidden = stats.complete && completionDialog.open;
+    if (stats.complete && !wasComplete && !completionDialog.open) {
+      app.querySelectorAll(".play-popover").forEach((panel) => panel.hidePopover());
+      completionDialog.showModal();
+      $("#new-picture").focus();
+    } else if (!stats.complete && completionDialog.open) {
+      completionDialog.close();
+    }
     $("#hint").disabled = !stats.remaining[selected];
     if (!stats.complete && wasComplete) confetti.reset();
     if (stats.complete && !wasComplete) {
-      $("#completion").classList.remove("celebrate");
-      void $("#completion").offsetWidth;
-      $("#completion").classList.add("celebrate");
       celebrate();
-      announce("You did it! Your picture is complete.");
+      announce("Hooray! You finished! Your picture is complete.");
     }
     wasComplete = stats.complete;
   };
@@ -603,6 +574,7 @@ function showPlay(record) {
     button.onclick = () => {
       finish();
       brushRadius = +button.dataset.radius;
+      $("#brush-settings").hidePopover();
       app.querySelectorAll("[data-radius]").forEach((item) => {
         item.setAttribute("aria-pressed", +item.dataset.radius === brushRadius);
       });
@@ -612,7 +584,7 @@ function showPlay(record) {
     if (renderer.hint || index < 0 || index >= state.progress.length) return;
     const changed = paintBrush(state, index, selected, brushRadius);
     changed.forEach((cell) => renderer.drawCell(cell));
-    if (changed.includes(hintMarker.index)) hintMarker.clear();
+    if (changed.length) hintMarker.remove(changed);
     if (!changed.length &&
       !state.progress[index] &&
       record.definition.cells[index] !== selected
@@ -652,7 +624,7 @@ function showPlay(record) {
     updateUI();
     persist(record, state.progress);
   };
-  $("#reset").onclick = async () => {
+  const resetPicture = async () => {
     if (
       !(await confirmAction(
         "Start this picture again?",
@@ -664,8 +636,11 @@ function showPlay(record) {
     reset(state);
     renderer.draw();
     updateUI();
+    announce("Picture started again. Choose a color and start coloring.");
     persist(record, state.progress);
   };
+  $("#reset").onclick = resetPicture;
+  $("#completion-reset").onclick = resetPicture;
   $("#zoom-in").onclick = () => zoom(scale + 0.5);
   $("#zoom-out").onclick = () => zoom(scale - 0.5);
   $("#fit").onclick = () => zoom(1);
@@ -695,16 +670,25 @@ function showPlay(record) {
       }, 2200);
   };
   $("#hint").onclick = () => {
-    const index = findHint(state, selected);
-    if (index < 0) return;
+    const indices = findHints(state, selected);
+    if (!indices.length) return;
     clearTimeout(hintTimer);
     renderer.hint = false;
     $("#show-picture").setAttribute("aria-pressed", "false");
     renderer.draw();
-    zoom(Math.max(scale, Math.min(4, record.definition.width * 16 / baseSize)));
-    hintMarker.show(index);
-    announce(`Hint: color ${selected}, row ${Math.floor(index / record.definition.width) + 1}, column ${index % record.definition.width + 1}.`);
+    hintMarker.show(indices);
+    announce(`Hint: ${indices.length} ${indices.length === 1 ? "square" : "squares"} left for color ${selected}.`);
   };
+  const completionDialog = $("#completion-dialog");
+  $("#completion-close").onclick = () => completionDialog.close();
+  completionDialog.addEventListener("click", (event) => {
+    if (event.target === completionDialog) completionDialog.close();
+  });
+  completionDialog.addEventListener("close", () => {
+    if (!summary(state).complete) return;
+    $("#selected-info").hidden = false;
+    $("#reset").hidden = false;
+  });
   $("#new-picture").onclick = () => navigate("#/create");
   const keyboard = (event) => {
     if (

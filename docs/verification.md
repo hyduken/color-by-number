@@ -47,3 +47,25 @@ Final read-only review identified and resolved two edge cases: save-status callb
 - Confetti now uses 260 pieces above 1000px, 150 at 601–1000px, and 90 at 600px and below. Compact layouts use smaller pieces and a lower upward velocity.
 - Coloring-screen stacked layout now applies at 1000px and below. Home/create page breakpoints remain unchanged.
 - Production build and diff check passed. Browser geometry confirmed stacked at 1000px and side-by-side at 1001px. The 390×844 phone viewport showed the lighter effect without horizontal document overflow. Physical device performance remains untested.
+
+
+## Compact drawing layouts
+
+- Replaced the width-based palette layout with a 64px bottom row in portrait and right column in landscape. Swatches retain 48×48px tap targets and scroll in one direction. Auto-selected colors scroll into view.
+- The toolbar stays on one row. Brush sizes open from Paint; More tools contains zoom, Redo, remaining counts and restart. Chooser/crop pages hide the main site header/footer and keep local back links.
+- Browser viewport checks: 320×568, 390×844, 844×390, 600×960, 960×600, 768×1024 and 1024×768. No document overflow. Canvas sizes increased from 67 to 270px on the smallest phone, 8 to 237px in phone landscape, and 134 to 447px in small-tablet landscape. All 32 colors were reachable in both orientations.
+- Browser checks: brush selector dismissal, zoom, matching-color painting, Undo, and menu-based Redo. No console warnings/errors. All 27 unit tests and production build passed. Physical phone/tablet gestures and browser chrome remain unverified.
+
+
+## Crop screen and touch gestures
+
+- Removed the difficulty heading and moved the generated thumbnail and size/color summary into Your picture, alongside its zoom control. Mobile presets use one compact row; the crop stays square and the Start action follows the fields without covering them.
+- Crop pointer handling supports one-finger drag and anchored two-finger pinch, constrained to zoom 1–3. Slider values stay synchronized. Releasing/cancelling a pointer rebases the remaining gesture.
+- All 30 tests and production build passed, including pinch limits, off-center anchor, drag continuity and cancellation. Browser checks covered mouse drag, slider zoom, automatic preview updates, preview placement and layouts at 320×568, 390×844, 768×1024, 844×390 and 1280×800; no horizontal page overflow or console warnings/errors. Physical touch pinch remains untested.
+
+
+## Touch zoom and hints for every matching square
+
+- Crop zoom slider and slider instructions are hidden when the device reports touch points or a coarse pointer, including hybrid touch computers. Desktop mouse-only devices retain the slider. Physical touch detection/pinch still needs device validation.
+- Hint now marks every unpainted square of the selected color on one canvas overlay. It neither zooms nor scrolls. Painted targets are removed while other rings remain; changing colors clears them. Reduced-motion users get static rings.
+- Browser: 49 remaining squares were highlighted; canvas size and scroll offsets stayed exactly unchanged. Painting reduced the count to 45 while the overlay remained. No console warnings/errors. Large single-color lookup is covered by a 128×128 regression check.

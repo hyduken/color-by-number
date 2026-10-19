@@ -1,12 +1,12 @@
 import {
   createElement, Paintbrush, Hand, Undo2, Redo2, Minus, Plus, Eye,
   Search, Camera, ImagePlus, Images, ArrowLeft, ArrowRight, Check,
-  RotateCcw, X, House, Flower2, Sun, Grid2X2,
+  RotateCcw, X, House, Flower2, Sun, Grid2X2, Ellipsis,
 } from 'lucide';
 
 const icons = { Paintbrush, Hand, Undo2, Redo2, Minus, Plus, Eye, Search,
   Camera, ImagePlus, Images, ArrowLeft, ArrowRight, Check, RotateCcw,
-  X, House, Flower2, Sun, Grid2X2 };
+  X, House, Flower2, Sun, Grid2X2, Ellipsis };
 
 export function icon(name) {
   return createElement(icons[name], {

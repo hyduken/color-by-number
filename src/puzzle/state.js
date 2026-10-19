@@ -96,6 +96,6 @@ export function summary(state) {
   };
 }
 
-export function findHint(state, color) {
-  return state.definition.cells.findIndex((id, index) => id === color && !state.progress[index]);
+export function findHints(state, color) {
+  return state.definition.cells.flatMap((id, index) => id === color && !state.progress[index] ? [index] : []);
 }
