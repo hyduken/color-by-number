@@ -31,5 +31,5 @@ export function lineCells(from, to, width) {
 }
 
 export function fitGrid(width, height) {
-  return Math.max(180, Math.min(660, width - 32, height - 32));
+  return Math.max(1, Math.min(width - 32, height - 32));
 }

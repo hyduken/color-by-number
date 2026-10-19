@@ -157,6 +157,8 @@ p {
   background: #ede7dd;
 }
 .back-button {
+  display: inline-flex;
+  align-items: center;
   min-height: 44px;
   background: none;
   padding: 0 8px 0 0;
@@ -441,8 +443,8 @@ p {
   background: #fffdf5e6;
 }
 footer {
-  border-top: 1px solid var(--line);
   max-width: 1124px;
+  border-top: 1px solid var(--line);
   margin: 0 auto;
   padding: 24px 0 30px;
   display: flex;
@@ -525,7 +527,8 @@ input[type="range"] {
   margin: 8px 0 22px;
 }
 .presets {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 .preset {
@@ -623,13 +626,23 @@ input[type="text"],
   min-height: 42px;
   padding: 12px 0 10px;
 }
+.playing .site-header {
+  display: none;
+}
 .play-screen {
-  max-width: 1180px;
-  margin: 0 auto 35px;
-  padding: 0 24px;
+  height: 100dvh;
+  padding: 8px 24px 16px;
+  display: flex;
+  flex-direction: column;
+}
+.play-screen > progress {
+  flex-shrink: 0;
+  margin-bottom: 12px;
 }
 .play-heading {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 24px;
   justify-content: space-between;
   align-items: center;
 }
@@ -642,10 +655,10 @@ input[type="text"],
   justify-content: space-between;
   gap: 15px;
   align-items: center;
-  margin: 17px 0;
+  margin: 8px 0;
 }
 .play-title h1 {
-  font-size: 32px;
+  font-size: 24px;
   letter-spacing: -1px;
   overflow-wrap: anywhere;
 }
@@ -678,11 +691,16 @@ progress::-moz-progress-bar {
   background: #88a18a;
 }
 .workspace {
+  flex: 1;
+  min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 280px;
   gap: 28px;
 }
 .canvas-area {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   min-width: 0;
   background: #f0ece3;
   border: 1px solid #e7e0d4;
@@ -723,9 +741,8 @@ progress::-moz-progress-bar {
   font-weight: 650;
 }
 .viewport {
-  height: min(63vw, 690px);
-  max-height: calc(100dvh - 285px);
-  min-height: 280px;
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   padding: 16px;
   overscroll-behavior: contain;
@@ -748,6 +765,10 @@ progress::-moz-progress-bar {
 .viewport canvas.panning:active {
   cursor: grabbing;
 }
+.canvas-toolbar,
+.canvas-help {
+  flex-shrink: 0;
+}
 .canvas-help {
   display: flex;
   justify-content: space-between;
@@ -762,6 +783,7 @@ progress::-moz-progress-bar {
   font-size: 10px;
 }
 .palette-panel {
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   padding: 14px 5px;
@@ -1155,21 +1177,27 @@ dialog p {
     min-height: 102px;
   }
   .play-screen {
-    padding: 0 12px;
-    margin-bottom: 15px;
+    padding: 4px 12px 12px;
   }
   .play-heading {
     padding: 0 5px;
+    grid-template-columns: auto 1fr;
+    gap: 0 12px;
+  }
+  .play-heading > #save-status {
+    grid-column: 1 / -1;
+    text-align: right;
+    padding-bottom: 6px;
   }
   .play-heading > span {
     font-size: 10px;
   }
   .play-title {
     padding: 0 5px;
-    margin: 9px 0 16px;
+    margin: 4px 0;
   }
   .play-title h1 {
-    font-size: 26px;
+    font-size: 20px;
   }
   .play-title > span {
     font-size: 12px;
@@ -1178,7 +1206,8 @@ dialog p {
     margin-bottom: 15px;
   }
   .workspace {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(140px, 1fr) auto;
     gap: 0;
   }
   .canvas-toolbar {
@@ -1201,8 +1230,6 @@ dialog p {
     font-size: 10px;
   }
   .viewport {
-    height: auto;
-    max-height: 65dvh;
     min-height: 0;
     padding: 12px;
   }
@@ -1217,7 +1244,8 @@ dialog p {
     border-radius: 16px;
   }
   .palette-panel {
-    padding: 18px 0 10px;
+    padding: 10px 0 0;
+    max-height: 40dvh;
     position: sticky;
     bottom: 0;
     background: var(--paper);

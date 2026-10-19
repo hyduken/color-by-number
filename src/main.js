@@ -38,6 +38,50 @@ let settings = { grid: 16, colors: 6, x: 50, y: 50, zoom: 1 };
 let noticeTimer;
 const memoryRecords = new Map();
 let saveQueue = Promise.resolve();
+let routeRevision = 0;
+
+function navigate(hash) {
+  if (location.hash === hash) renderRoute();
+  else location.hash = hash;
+}
+async function renderRoute() {
+  const revision = ++routeRevision;
+  dispose();
+  dispose = () => {};
+  if (current) persist(current.record, current.state.progress);
+  current = null;
+  const hash = location.hash;
+  if (hash === "#/create" && source) {
+    showCreate();
+    return;
+  }
+  const puzzleRoute = /^#\/puzzle\/([^/]+)$/.exec(hash);
+  if (puzzleRoute) {
+    const id = puzzleRoute[1];
+    let record = memoryRecords.get(id);
+    if (!record) {
+      mount('<p class="muted">Opening your puzzle…</p>');
+      try {
+        record = (await listPuzzles()).find((p) => p.id === id);
+      } catch {
+        if (revision !== routeRevision) return;
+        notice("Saved puzzles are unavailable in this browser.");
+      }
+    }
+    if (revision !== routeRevision) return;
+    if (record) {
+      memoryRecords.set(id, record);
+      showPlay(record);
+      return;
+    }
+    notice("This puzzle is not saved on this device.");
+  }
+  if (hash === "#/create" && !source)
+    notice("Choose your picture again to start a new puzzle.");
+  if (!["#/", "#/library"].includes(hash))
+    history.replaceState(null, "", "#/");
+  showHome(location.hash === "#/library", revision);
+}
 
 function notice(message, persistent = false) {
   const box = document.querySelector("#notice");
@@ -56,6 +100,7 @@ function mount(html) {
   dispose();
   dispose = () => {};
   app.innerHTML = html;
+  document.body.classList.toggle("playing", !!app.querySelector(".play-screen"));
   window.scrollTo(0, 0);
 }
 function confirmAction(title, copy) {
@@ -105,7 +150,7 @@ async function pick(file) {
     source = loaded;
     settings = { grid: 16, colors: 6, x: 50, y: 50, zoom: 1 };
     draft = null;
-    showCreate();
+    navigate("#/create");
   } catch (error) {
     notice(error.message);
   } finally {
@@ -127,11 +172,7 @@ function renderMini(canvas, definition, progress) {
   );
   renderer.resize(240);
 }
-async function showHome(focusLibrary = false) {
-  if (current) persist(current.record, current.state.progress);
-  current = null;
-  source = null;
-  draft = null;
+async function showHome(focusLibrary = false, revision = routeRevision) {
   mount(`<section class="home-hero">
     <div class="hero-copy"><h1>A little color.<br>A lot of <em>you.</em><span class="spark" aria-hidden="true">✳</span></h1>
     <p>Turn a favourite picture into a color-by-number adventure. One little square at a time.</p>
@@ -140,7 +181,7 @@ async function showHome(focusLibrary = false) {
     <div class="hero-art"><div class="art-tape" aria-hidden="true"></div><div class="art-paper"><canvas id="hero-canvas" aria-label="A pixel-art cat, partly colored by number"></canvas><div class="art-caption"><span>Small squares, happy places.</span><span aria-hidden="true">☀</span></div></div><div class="floating-swatch swatch-yellow" aria-hidden="true">1</div><div class="floating-swatch swatch-green" aria-hidden="true">3</div></div>
     </section>
     <section class="library" id="library"><div class="section-heading"><h2>Your little masterpieces</h2><span id="library-count"></span></div><div id="saved-puzzles" class="saved-grid"><p class="muted">Opening your puzzle box…</p></div></section>
-    <footer>Made for curious minds & colorful afternoons.<span>A Hyduken project</span></footer>`);
+    <footer>Made for curious minds & colorful afternoons.<a href="https://hyduken.com/">made by hyduken</a></footer>`);
   $("#upload").onclick = inputFile;
   const demo = demoImage();
   const definition = processImage(demo, {
@@ -172,7 +213,7 @@ async function showHome(focusLibrary = false) {
       "Saved puzzles are unavailable in this browser. You can still make and color a picture.",
     );
   }
-  if (!$("#saved-puzzles")) return;
+  if (revision !== routeRevision || !$("#saved-puzzles")) return;
   const records = [...memoryRecords.values()].sort(
     (a, b) => b.updatedAt - a.updatedAt,
   );
@@ -189,14 +230,14 @@ async function showHome(focusLibrary = false) {
     source = { canvas, blob, title: "Sunny little cat" };
     draft = null;
     settings = { grid: 16, colors: 6, x: 50, y: 50, zoom: 1 };
-    showCreate();
+    navigate("#/create");
   };
   records.forEach((record) => {
     const filled = record.progress.filter(Boolean).length;
     const percent = Math.floor((filled / record.definition.cells.length) * 100);
     const card = document.createElement("article");
     card.className = "saved-card";
-    card.innerHTML = `<button class="open-puzzle"><canvas aria-hidden="true"></canvas><span class="saved-info"><strong>${escape(record.title)}</strong><span>${percent === 100 ? "Finished! ✨" : `${percent}% colored · ${record.definition.width} × ${record.definition.height}`}</span><span class="mini-progress"><i style="width:${percent}%"></i></span></span></button><button class="delete-puzzle" aria-label="Delete ${escape(record.title)}" title="Delete puzzle">×</button>`;
+    card.innerHTML = `<a class="open-puzzle" href="#/puzzle/${escape(record.id)}"><canvas aria-hidden="true"></canvas><span class="saved-info"><strong>${escape(record.title)}</strong><span>${percent === 100 ? "Finished! ✨" : `${percent}% colored · ${record.definition.width} × ${record.definition.height}`}</span><span class="mini-progress"><i style="width:${percent}%"></i></span></span></a><button class="delete-puzzle" aria-label="Delete ${escape(record.title)}" title="Delete puzzle">×</button>`;
     $("#saved-puzzles").append(card);
     try {
       renderMini(card.querySelector("canvas"), record.definition);
@@ -204,7 +245,6 @@ async function showHome(focusLibrary = false) {
       card.remove();
       return;
     }
-    card.querySelector(".open-puzzle").onclick = () => showPlay(record);
     card.querySelector(".delete-puzzle").onclick = async () => {
       if (
         !(await confirmAction(
@@ -217,7 +257,7 @@ async function showHome(focusLibrary = false) {
         await saveQueue;
         await deletePuzzle(record.id);
         memoryRecords.delete(record.id);
-        showHome(true);
+        navigate("#/library");
       } catch {
         notice("Could not delete this picture. Please try again.");
       }
@@ -226,11 +266,13 @@ async function showHome(focusLibrary = false) {
   if (focusLibrary) $("#library").scrollIntoView({ behavior: "instant" });
 }
 function showCreate() {
-  mount(`<section class="create-screen"><button class="back-button" id="back">← All pictures</button><div class="create-heading"><h1>Make it your own.</h1><p>A little crop. A few colors. A new adventure.</p></div>
+  mount(`<section class="create-screen"><a class="back-button" id="back" href="#/">← All pictures</a><div class="create-heading"><h1>Make it your own.</h1><p>A little crop. A few colors. A new adventure.</p></div>
     <div class="create-layout"><section class="picture-panel"><div class="panel-heading"><h2>Your picture</h2><button class="button subtle" id="change-image">Change</button></div><div class="crop-frame"><canvas id="crop-preview" aria-label="Square crop preview"></canvas></div><div class="crop-controls"><label>Move across<input id="crop-x" type="range" min="0" max="100" value="${settings.x}"></label><label>Move up / down<input id="crop-y" type="range" min="0" max="100" value="${settings.y}"></label><label>Crop zoom<input id="crop-zoom" type="range" min="1" max="3" step="0.1" value="${settings.zoom}"></label></div></section>
-    <section class="settings-panel"><h2>Pick your adventure</h2><div class="presets" role="group" aria-label="Difficulty"><button class="preset active" data-grid="16" data-colors="6"><span aria-hidden="true">✿</span>Easy<small>Little steps</small></button><button class="preset" data-grid="32" data-colors="8"><span aria-hidden="true">✳</span>Medium<small>A little more</small></button><button class="preset" data-grid="64" data-colors="16"><span aria-hidden="true">✷</span>Hard<small>Big adventure</small></button></div><div class="select-row"><label>Squares<select id="grid-size">${[16, 24, 32, 48, 64].map((n) => `<option value="${n}" ${settings.grid === n ? "selected" : ""}>${n} × ${n}</option>`).join("")}</select></label><label>colors<select id="palette-size">${[6, 8, 12, 16].map((n) => `<option value="${n}" ${settings.colors === n ? "selected" : ""}>${n} colors</option>`).join("")}</select></label></div><label class="title-label">Picture name<input id="picture-title" maxlength="60" value="${escape(source.title)}"></label><button class="button secondary" id="generate">Make my puzzle <span aria-hidden="true">↗</span></button><div class="generated-preview" id="generated-preview"><div class="preview-placeholder"><span aria-hidden="true">▦</span>Your puzzle will appear here</div></div><div class="preview-meta" id="preview-meta"></div><button class="button primary" id="start" disabled>Let’s color <span aria-hidden="true">→</span></button></section></div></section>`);
-  $("#back").onclick = () => showHome();
+    <section class="settings-panel"><h2>Pick your adventure</h2><div class="presets" role="group" aria-label="Difficulty"><button class="preset active" data-grid="16" data-colors="6"><span aria-hidden="true">✿</span>Easy<small>Little steps</small></button><button class="preset" data-grid="32" data-colors="8"><span aria-hidden="true">✳</span>Medium<small>A little more</small></button><button class="preset" data-grid="64" data-colors="16"><span aria-hidden="true">✷</span>Hard<small>Big adventure</small></button><button class="preset" data-grid="128" data-colors="32"><span aria-hidden="true">✹</span>Full Colour Chaos<small>All in!</small></button></div><div class="select-row"><label>Squares<select id="grid-size">${[16, 24, 32, 48, 64, 128].map((n) => `<option value="${n}" ${settings.grid === n ? "selected" : ""}>${n} × ${n}</option>`).join("")}</select></label><label>colors<select id="palette-size">${[6, 8, 12, 16, 24, 32].map((n) => `<option value="${n}" ${settings.colors === n ? "selected" : ""}>${n} colors</option>`).join("")}</select></label></div><label class="title-label">Picture name<input id="picture-title" maxlength="60" value="${escape(source.title)}"></label><button class="button secondary" id="generate">Make my puzzle <span aria-hidden="true">↗</span></button><div class="generated-preview" id="generated-preview"><div class="preview-placeholder"><span aria-hidden="true">▦</span>Your puzzle will appear here</div></div><div class="preview-meta" id="preview-meta"></div><button class="button primary" id="start" disabled>Let’s color <span aria-hidden="true">→</span></button></section></div></section>`);
   $("#change-image").onclick = inputFile;
+  $("#picture-title").oninput = (event) => {
+    source.title = event.target.value;
+  };
   const drawCrop = () => {
     const crop = cropImage(source.canvas, settings, 480);
     const canvas = $("#crop-preview");
@@ -317,10 +359,8 @@ function showCreate() {
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
-    source = null;
-    draft = null;
-    showPlay(record);
     persist(record, record.progress);
+    navigate(`#/puzzle/${record.id}`);
   };
   drawCrop();
   updatePresets();
@@ -335,8 +375,6 @@ function showPlay(record) {
     return;
   }
   current = { record, state };
-  source = null;
-  draft = null;
   let selected =
     record.definition.palette.find((p) =>
       state.definition.cells.some((id, i) => id === p.id && !state.progress[i]),
@@ -347,7 +385,7 @@ function showPlay(record) {
     hintTimer,
     wrongTimer,
     resizeFrame;
-  mount(`<section class="play-screen"><div class="play-heading"><button class="back-button" id="back">← My puzzles</button><span id="save-status">Saved on this device</span></div><div class="play-title"><h1>${escape(record.title)}</h1><span id="progress-text"></span></div><progress id="progress" max="100" value="0" aria-label="Puzzle completion"></progress>
+  mount(`<section class="play-screen"><div class="play-heading"><a class="back-button" id="back" href="#/library">← My puzzles</a><div class="play-title"><h1>${escape(record.title)}</h1><span id="progress-text"></span></div><span id="save-status">Saved on this device</span></div><progress id="progress" max="100" value="0" aria-label="Puzzle completion"></progress>
     <div class="workspace"><div class="canvas-area"><div class="canvas-toolbar"><div class="tool-group"><button class="tool" id="undo" aria-label="Undo stroke" title="Undo (Ctrl/⌘ Z)">↶</button><button class="tool" id="redo" aria-label="Redo stroke" title="Redo (Ctrl/⌘ Shift Z)">↷</button></div><div class="tool-group"><button class="tool" id="pan" aria-label="Move picture" aria-pressed="false" title="Move picture">✥</button><button class="tool" id="zoom-out" aria-label="Zoom out">−</button><button class="zoom-value" id="fit" title="Fit picture">100%</button><button class="tool" id="zoom-in" aria-label="Zoom in">＋</button></div><button class="button subtle" id="hint">Peek <span aria-hidden="true">◉</span></button></div>
     <div class="viewport" id="viewport"><canvas id="puzzle-canvas" tabindex="0" role="application" aria-label="coloring grid. Use arrow keys to move and Space to color. Choose a numbered color first." aria-describedby="canvas-help"></canvas></div><p class="canvas-help" id="canvas-help">Pick a color, then tap or drag over its number.<span>Pinch to zoom · ✥ to move</span></p></div>
     <aside class="palette-panel"><div class="palette-heading"><h2>Your colors</h2><span id="colors-done"></span></div><div class="palette" id="palette" role="group" aria-label="Numbered colors"></div><div class="selected-info" id="selected-info"></div><div class="completion" id="completion" hidden><span class="complete-flower" aria-hidden="true">✿</span><h2>You made this!</h2><p>Every little square, all you.</p><button class="button primary" id="new-picture">Another adventure →</button></div><div class="palette-bottom"><button class="button subtle" id="reset">Start again ↶</button><span>${record.definition.width} × ${record.definition.height} little squares</span></div></aside></div></section>`);
@@ -359,9 +397,7 @@ function showPlay(record) {
   const fitSize = () => {
     baseSize = fitGrid(
       viewport.clientWidth,
-      window.innerWidth > 700
-        ? viewport.clientHeight
-        : window.innerHeight * 0.65,
+      viewport.clientHeight,
     );
     renderer.resize(Math.round(baseSize * scale));
     $("#canvas-help").firstChild.textContent =
@@ -484,10 +520,6 @@ function showPlay(record) {
     isPanning: () => panning,
     announce,
   });
-  $("#back").onclick = () => {
-    finish();
-    showHome(true);
-  };
   $("#undo").onclick = () => {
     undo(state);
     renderer.draw();
@@ -563,11 +595,6 @@ function showPlay(record) {
   updateUI();
 }
 
-document.querySelector(".brand").onclick = (event) => {
-  event.preventDefault();
-  showHome();
-};
-document.querySelector("#library-link").onclick = () => showHome(true);
 window.addEventListener("dragover", (event) => {
   if (event.dataTransfer.types.includes("Files")) {
     event.preventDefault();
@@ -601,4 +628,5 @@ document.addEventListener("visibilitychange", () => {
 window.addEventListener("pagehide", () => {
   if (current) persist(current.record, current.state.progress);
 });
-showHome();
+window.addEventListener("hashchange", renderRoute);
+renderRoute();

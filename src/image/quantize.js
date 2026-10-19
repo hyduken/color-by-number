@@ -10,7 +10,7 @@ export function quantize({ width, height, data }, colors) {
     data.length !== width * height * 4 ||
     !Number.isInteger(colors) ||
     colors < 1 ||
-    colors > 16
+    colors > 32
   ) {
     throw new Error("Invalid image dimensions or palette size.");
   }

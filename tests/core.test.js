@@ -48,6 +48,22 @@ test("quantisation is deterministic and does not mutate source", () => {
   assert.deepEqual(quantize(source, 8), quantize(source, 8));
   assert.deepEqual(source.data, before);
 });
+test("128 square puzzles support a 32 color palette and saved progress", () => {
+  const source = pixels(128, 128, (i) => [
+    (i % 8) * 36,
+    (Math.floor(i / 8) % 4) * 85,
+    100,
+    255,
+  ]);
+  const result = quantize(source, 32);
+  assert.equal(result.cells.length, 128 * 128);
+  assert.equal(result.palette.length, 32);
+  const state = createState(result);
+  assert.equal(paint(state, 0, result.cells[0]), true);
+  const restored = createState(result, state.progress);
+  assert.equal(restored.progress[0], true);
+  assert.equal(summary(restored).filled, 1);
+});
 test("invalid processing inputs fail clearly", () => {
   assert.throws(() => quantize({ width: 1, height: 1, data: [] }, 6));
   assert.throws(() =>
@@ -126,7 +142,10 @@ test("fit respects both width and height on short desktop and narrow screens", a
   const { fitGrid } = await import("../src/renderer/geometry.js");
   assert.equal(fitGrid(820, 435), 403);
   assert.equal(fitGrid(378, 537), 346);
-  assert.equal(fitGrid(1200, 1000), 660);
+  assert.equal(fitGrid(2200, 1100), 1068);
+  assert.equal(fitGrid(1200, 1000), 968);
+  assert.equal(fitGrid(1024, 650), 618);
+  assert.equal(fitGrid(600, 150), 118);
 });
 
 test("partial transparency composites against white before quantisation", () => {
