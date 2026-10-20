@@ -735,7 +735,7 @@ progress::-moz-progress-bar { background: #88a18a; }
 .swatch-check { display: none; position: absolute; right: -4px; bottom: -3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; color: #4d7864; border: 1px solid #91aa96; place-items: center; }
 .swatch.done .swatch-check { display: grid; }
 .selected-info { margin: 12px 0; font-size: 12px; color: #786879; }
-.play-popover { position: fixed; inset: 106px 12px auto auto; margin: 0; max-width: calc(100vw - 24px); max-height: calc(100dvh - 118px); overflow: auto; padding: 16px; border: 1px solid #d8cede; border-radius: 16px; background: var(--paper); color: var(--ink); box-shadow: 0 8px 28px #40344830; }
+.play-popover { position: fixed; inset: auto; left: 50%; top: 106px; transform: translateX(-50%); margin: 0; max-width: calc(100vw - 24px); max-height: calc(100dvh - 118px); overflow: auto; padding: 16px; border: 1px solid #d8cede; border-radius: 16px; background: var(--paper); color: var(--ink); box-shadow: 0 8px 28px #40344830; }
 .play-popover h2 { font-size: 18px; margin-bottom: 12px; }
 .play-popover > p { font-size: 12px; margin-top: 12px; }
 .play-popover .picture-dimensions { color: #817583; font-size: 10px; }

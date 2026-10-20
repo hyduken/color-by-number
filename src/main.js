@@ -429,12 +429,30 @@ function showPlay(record) {
     resizeFrame,
     visibleColor;
   mount(`<section class="play-screen"><div class="play-heading"><a class="back-button" id="back" href="#/library">${icon("ArrowLeft")} My pictures</a><div class="play-title"><h1>${escape(record.title)}</h1><span id="progress-text"></span></div></div><progress id="progress" max="100" value="0" aria-label="Puzzle completion"></progress>
-    <div class="workspace"><div class="canvas-area"><div class="canvas-toolbar" role="toolbar" aria-label="Coloring tools"><button class="tool" id="undo" aria-label="Undo coloring" title="Undo">${icon("Undo2")}</button><button class="tool" id="paint-mode" aria-label="Paint and choose brush size" aria-pressed="true" popovertarget="brush-settings" title="Brush size">${icon("Paintbrush")}</button><button class="tool" id="pan" aria-label="Move picture" aria-pressed="false" title="Move picture">${icon("Hand")}</button><button class="tool icon-action" id="show-picture" aria-label="Show the finished picture for a moment" aria-pressed="false">${icon("Eye")}<span>Show</span></button><button class="tool icon-action" id="hint" aria-label="Hint: show all remaining squares of this color">${icon("Search")}<span>Hint</span></button><button class="tool" popovertarget="picture-options" aria-label="More picture tools" title="More tools">${icon("Ellipsis")}</button></div>
+    <div class="workspace"><div class="canvas-area"><div class="canvas-toolbar" role="toolbar" aria-label="Coloring tools"><button class="tool" id="undo" aria-label="Undo coloring" title="Undo">${icon("Undo2")}</button><button class="tool" id="paint-mode" aria-label="Paint and choose brush size" aria-pressed="true" popovertarget="brush-settings" title="Brush size">${icon("Paintbrush")}</button><button class="tool" id="pan" aria-label="Move picture" aria-pressed="false" title="Move picture">${icon("Hand")}</button><button class="tool icon-action" id="show-picture" aria-label="Show the finished picture for a moment" aria-pressed="false">${icon("Eye")}<span>Show</span></button><button class="tool icon-action" id="hint" aria-label="Hint: show all remaining squares of this color">${icon("Search")}<span>Hint</span></button><button class="tool" id="picture-tools-button" popovertarget="picture-options" aria-label="More picture tools" title="More tools">${icon("Ellipsis")}</button></div>
     <div class="viewport" id="viewport"><canvas id="puzzle-canvas" tabindex="0" role="application" aria-label="Coloring grid. Use arrow keys to move and press Space to color. Choose a numbered color first."></canvas></div></div>
     <aside class="palette-panel" aria-label="Your colors"><div class="palette" id="palette" role="group" aria-label="Numbered colors"></div></aside></div>
     <div class="play-popover" id="brush-settings" popover><h2>Brush size</h2><div class="brush-sizes" role="group" aria-label="Brush size">${[[0,"1 square",4],[1,"Small",7],[3,"Medium",12],[5,"Large",18]].map(([radius,label,size]) => `<button class="brush-size" data-radius="${radius}" aria-label="${label} brush" title="${label}" aria-pressed="${brushRadius === radius}"><span class="brush-dot ${radius === 0 ? "brush-pixel" : ""}" style="--dot-size:${size}px" aria-hidden="true"></span></button>`).join("")}</div></div>
     <div class="play-popover" id="picture-options" popover><h2>Picture tools</h2><div class="tool-group"><button class="tool" id="zoom-out" aria-label="Zoom out">${icon("Minus")}</button><button class="zoom-value" id="fit" title="Fit picture">100%</button><button class="tool" id="zoom-in" aria-label="Zoom in">${icon("Plus")}</button><button class="tool" id="redo" aria-label="Redo coloring" title="Redo">${icon("Redo2")}</button></div><p id="colors-done"></p><div class="selected-info" id="selected-info"></div><button class="button subtle" id="reset">Start again ${icon("RotateCcw")}</button><p class="picture-dimensions">${record.definition.width} × ${record.definition.height} squares</p></div>
     <dialog class="completion-dialog" id="completion-dialog" aria-labelledby="completion-title"><div class="completion-card"><button class="completion-close" id="completion-close" aria-label="Close and see your picture">${icon("X")}</button><span class="complete-flower" aria-hidden="true">${icon("Flower2")}</span><h2 id="completion-title">Hooray! You finished!</h2><p>Every square is colored. What would you like to do?</p><div class="completion-actions"><button class="button primary" id="new-picture">Another picture ${icon("ArrowRight")}</button><button class="button secondary" id="completion-reset">Start again ${icon("RotateCcw")}</button></div></div></dialog></section>`);
+  const popovers = [
+    [$("#brush-settings"), $("#paint-mode")],
+    [$("#picture-options"), $("#picture-tools-button")],
+  ];
+  const positionPopover = (popover, button) => {
+    const rect = button.getBoundingClientRect();
+    const halfWidth = popover.offsetWidth / 2;
+    const center = Math.max(12 + halfWidth, Math.min(window.innerWidth - 12 - halfWidth, rect.left + rect.width / 2));
+    popover.style.left = `${center}px`;
+    popover.style.top = `${rect.bottom + 8}px`;
+  };
+  const repositionOpenPopovers = () => popovers.forEach(([popover, button]) => {
+    if (popover.matches(":popover-open")) positionPopover(popover, button);
+  });
+  popovers.forEach(([popover, button]) => popover.addEventListener("toggle", (event) => {
+    if (event.newState === "open") requestAnimationFrame(() => positionPopover(popover, button));
+  }));
+  window.addEventListener("resize", repositionOpenPopovers);
   const canvas = $("#puzzle-canvas"),
     viewport = $("#viewport");
   const renderer = new PuzzleCanvas(canvas, record.definition, state.progress);
@@ -710,6 +728,7 @@ function showPlay(record) {
     clearTimeout(wrongTimer);
     hintMarker.clear();
     confetti.reset();
+    window.removeEventListener("resize", repositionOpenPopovers);
     document.removeEventListener("keydown", keyboard);
   };
   fitSize();
